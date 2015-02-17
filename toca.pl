@@ -560,7 +560,7 @@ sub summarize_mb_stddev {
 	chomp(my @data = <$mb_stddev_sum_file>);
 	close($mb_stddev_sum_file);
 
-	my $summary = summarize(\@data);
+	my $summary = summarize(\@data, "STDDEV");
 
 	# Reopen for output
 	open($mb_stddev_sum_file, ">", $mb_stddev_sum);
@@ -614,7 +614,7 @@ sub summarize_mb_swap_freqs {
 	foreach my $y (0 .. $#swap_values) {
 		foreach my $x (0 .. $#{$swap_values[$y]}) {
 
-			my $summary = summarize($swap_values[$y]->[$x]);
+			my $summary = summarize($swap_values[$y]->[$x], "SWAP");
 			if (length($summary) > $longest_entry) {
 				$longest_entry = length($summary);
 			}
