@@ -3,6 +3,7 @@ use strict;
 use warnings;
 use POSIX;
 use Getopt::Long;
+use Fcntl qw(:flock SEEK_END);
 
 ##################################################################################
 ## Initialize Global variables, check for dependecies, parse command line options:
@@ -28,6 +29,7 @@ my $alg_conn_threshold = 0.25;
 # MrBayes settings:
 #  - These will result in 250,000 samples and a 100,000 generation burnin
 my $nruns = 4;
+my $nchains = 3;
 my $burnin = 0.10;
 my $ngen = 1000000;
 my $samplefreq = 40;
@@ -70,6 +72,9 @@ foreach my $transcriptome (@transcriptomes) {
 ####################################
 
 my $project_name = "toca-".time();
+my $mb_swap_sum = $project_name."-mb-swap.txt";
+my $mb_stddev_sum = $project_name."-mb-stddev.txt";
+
 system("$protein_ortho @transcriptomes -p=blastn+ -clean -conn=$alg_conn_threshold -project=$project_name");
 
 # Reduce output only to families containing protein(s) in each transcriptome
@@ -165,6 +170,9 @@ foreach my $pid (@pids) {
 	waitpid($pid, 0);
 }
 
+summarize_mb_stddev();
+summarize_mb_swap_freqs();
+
 ########################################
 # Run BUCKy on the MrBayes output files:
 ########################################
@@ -215,7 +223,7 @@ sub reduce_family_to_quartets {
 			$species_count{$species}++;
 		}
 
-		# A valid quartet if has all transcriptomes represented
+		# A valid quartet has all transcriptomes represented
 		if (scalar(keys %species_count) == scalar(@transcriptomes)) {
 			my @quartet;
 			foreach my $contig (@{$quartet}) {
@@ -252,7 +260,7 @@ sub analyze_family {
 	my $id = $args->{ID};
 	my @members = @{$args->{MEMBERS}};
 
-	# Get the sequence of each member in this family
+	# Get the sequence of each contig in this family
 	my %sequences;
 	foreach my $index (0 .. $#members) {
 		(my $base_name = $transcriptomes[$index]) =~ s/(.*\/)?(.*)\..*/$2/;
@@ -269,9 +277,12 @@ sub analyze_family {
 	# Only the homologous sequence of the family
 	my $family_reduced = "$id-reduced.fasta";
 
+	# Stores STDOUT of MrBayes run
+	my $mb_log_name = "$family_aligned.mb.log";
+
 	# Add all of the temporary files we don't care about into the deletion array
 	push(@unlink, $family_raw, $family_reduced, $family_raw.".nhr", $family_raw.".nin", $family_raw.".nsq", 
-		$family_raw.".out", $family_aligned.".ckp", $family_aligned.".ckp~", $family_aligned.".mcmc");
+		$family_raw.".out", $family_aligned.".ckp", $family_aligned.".ckp~", $family_aligned.".mcmc", $mb_log_name);
 
 	foreach my $run (1 .. $nruns) {
 		push(@unlink, "$family_aligned.run$run.t");
@@ -302,7 +313,7 @@ sub analyze_family {
 	chomp(my @lines = <$blast>);
 	close($blast);
 
-	# Remove any BLAST hits in the reverse direction as they are unwanted coinindences now
+	# Remove any BLAST hits in the reverse direction as they are unwanted coincidences
 	foreach my $index (reverse(0 .. $#lines)) {
 		my @line = split("\t", $lines[$index]);
 
@@ -405,6 +416,7 @@ sub analyze_family {
 	# Run MUSCLE, MrBayes, then summarize MrBayes results:
 	######################################################
 
+	# Align with MUSCLE
 	print "[$id] Aligning reduced sites with MUSCLE.\n";
 	system("$muscle -in $family_reduced -out $family_aligned >/dev/null 2>&1") || die;
 
@@ -412,8 +424,52 @@ sub analyze_family {
 	my %family_aligned = parse_fasta($family_aligned);
 	write_nexus({'OUT' => $family_aligned, 'ALIGN' => \%family_aligned});
 
+	# Run MrBayes
 	print "[$id] Running MrBayes and summarizing runs.\n";
-	system("$mb $family_aligned >/dev/null") || die;
+	#system("$mb $family_aligned >/dev/null") || die;
+	system("$mb $family_aligned > $mb_log_name") || die;
+
+	# Open MrBayes log, extract swap frequencies + final std dev of split frequencies
+	open(my $mb_log, "<", $mb_log_name);
+	chomp(my @data = <$mb_log>);
+	close($mb_log);
+
+	my @matrix_lines;
+	my $final_std_dev;
+	foreach my $line (@data) {
+
+		$line =~ s/^\s+|\s+$//g;
+		next if ($line eq "");
+
+		if ($line =~ /Average standard deviation of split frequencies: (\S+)/) {
+			$final_std_dev = $1;
+		}
+
+		if ($line =~ /(\d+) \|/) {
+			#print {$storage} $line,"\n";
+			push(@matrix_lines, "$line\n");
+		}
+	}
+
+	# Get file lock on swap sum so multiple processes don't write at the same time
+	open(my $mb_swap_sum_file, ">>", $mb_swap_sum);
+	flock($mb_swap_sum_file, LOCK_EX) || die "Could not lock '$mb_swap_sum_file': $!.\n";
+	seek($mb_swap_sum_file, 0, SEEK_END) || die "Could not seek '$mb_swap_sum_file': $!.\n";
+
+	print {$mb_swap_sum_file} "@matrix_lines";
+
+	flock($mb_swap_sum_file, LOCK_UN) || die "Could not unlock '$mb_swap_sum_file': $!.\n";
+	close($mb_swap_sum_file);
+
+	# Get file lock on std dev sum so multiple processes don't write at the same time
+	open(my $mb_stddev_sum_file, ">>", $mb_stddev_sum);
+	flock($mb_stddev_sum_file, LOCK_EX) || die "Could not lock '$mb_stddev_sum_file': $!.\n";
+	seek($mb_stddev_sum_file, 0, SEEK_END) || die "Could not seek '$mb_stddev_sum_file': $!.\n";
+
+	print {$mb_stddev_sum_file} "$final_std_dev\n";
+
+	flock($mb_stddev_sum_file, LOCK_UN) || die "Could not unlock '$mb_stddev_sum_file': $!.\n";
+	close($mb_stddev_sum_file);
 
 	# The number of generations from each run to exclude
 	my $trim = ($ngen * $burnin * $burnin + $nruns) / $nruns;
@@ -456,7 +512,7 @@ sub reorient_contigs {
 
 		$quartet{$query}++;
 
-		# Subject strand is in reverse direction
+		# Subject strand is in reverse direction, hasn't been labeled as being reversed, and doesn't currently have a hit with query
 		if ($s_strand eq "minus" && !exists($strands{$query}) && !exists($hits{"$query-$match"})) {
 			$strands{$match}++;
 		}
@@ -473,7 +529,7 @@ sub reorient_contigs {
 		}
 	}
 
-	# Reverse complement any sequences in the wrong direction then rerun this method
+	# Reverse complement any sequences in the reverse direction then rerun this method
 	if (keys %strands > 0) {
 
 		print "[$id] Reorienting contig(s).\n";
@@ -495,6 +551,118 @@ sub reorient_contigs {
 		close($raw);
 		reorient_contigs($id, \%sequences);
 	}
+}
+
+sub summarize_mb_sttdev {
+
+	# Read in all std devs
+	open(my $mb_stddev_sum_file, "<", $mb_stddev_sum);
+	chomp(my @data = <$mb_stddev_sum_file>);
+	close($mb_stddev_sum_file);
+
+	my $summary = summarize(\@data);
+
+	# Reopen for output
+	open($mb_stddev_sum_file, ">", $mb_stddev_sum);
+	print {$mb_stddev_sum_file} "Average standard deviation of split frequencies across all families: $summary\n";
+	close($mb_stddev_sum_file);
+
+	return;
+}
+
+sub summarize_mb_swap_freqs {
+
+	# Read in all swap matrices
+	open(my $mb_swap_sum_file, "<", $mb_swap_sum);
+	chomp(my @data = <$mb_swap_sum_file>);
+	close($mb_swap_sum_file);
+
+	# Parse the individual matrices from the file
+	my @swap_matrices;
+	foreach my $index (0 .. $#data) {
+		my $line = $data[$index];
+
+		if ($line =~ /(\d+) \|/) {
+			if ($1 == $nchains) {
+				my $matrix = join("\n", @data[$index - $nchains + 1 .. $index]);
+				push(@swap_matrices, $matrix);
+			}
+		}
+	}
+
+	# Join individual matrices into a single one
+	my @swap_values;
+	foreach my $matrix (@swap_matrices) {
+
+		my @matrix = split("\n", $matrix);
+		foreach my $y (0 .. $#matrix) {
+			my $line = $matrix[$y];
+			$line =~ s/\d+ \|\s+//;
+
+			my @line = split(/\s+/, $line);
+			splice(@line, $y, 0, "");
+
+			foreach my $x (0 .. $#line) {
+				my $number = $line[$x];
+				push(@{$swap_values[$y]->[$x]}, $number);
+			}
+		}
+	}
+
+	# Summarize each matrix entry and determine length of longest one for table formatting
+	my $longest_entry = 0;
+	foreach my $y (0 .. $#swap_values) {
+		foreach my $x (0 .. $#{$swap_values[$y]}) {
+
+			my $summary = summarize($swap_values[$y]->[$x]);
+			if (length($summary) > $longest_entry) {
+				$longest_entry = length($summary);
+			}
+		}
+	}
+
+	# Output matrix summary to file
+	open($mb_swap_sum_file, ">", $mb_swap_sum);
+	print {$mb_swap_sum_file} "Summary of ".scalar(@swap_matrices)." swap matrices:\n\n";
+
+	# The code is ugly but at least the matrix is nice
+	my $nchains_width = length($nchains);
+	my $field_width = $longest_entry + 2;
+	foreach my $y (0 .. $#swap_values) {
+
+		# Add the header before the first row
+		my $line;
+		if ($y == 0) {
+			$line .= (" " x ($nchains_width + 2));
+			foreach my $run (1 .. $nchains) {
+				$line .= sprintf("%".($field_width - 1)."s", $run);
+			}
+			$line .= "\n";
+			
+			my $header_width = length($line);
+
+			$line .= (" " x ($nchains_width + 1)).("-" x ($header_width - ($nchains_width + 2)))."\n";
+		}
+
+		$line .= sprintf("%${nchains_width}d |", $y + 1);
+
+		foreach my $x (0 .. $#{$swap_values[$y]}) {
+			my $summary = summarize($swap_values[$y]->[$x]);
+			if ($summary) {
+				$line .= sprintf("%${field_width}s", $summary);
+			}
+			else {
+				$line .= ' ' x ($field_width - 1);
+			}
+		}
+		print {$mb_swap_sum} "$line\n";
+	}
+
+	print {$mb_swap_sum} "\nUpper diagonal: Mean proportion of successful state exchanges between chains for all genes\n";
+	print {$mb_swap_sum} "Lower diagonal: Mean number of attempted state exchanges between chains for all genes\n\n";
+	print {$mb_swap_sum} "Standard deviations are in parentheses\n";
+
+	return;
 }
 
 sub parse_fasta {
@@ -537,14 +705,14 @@ sub write_nexus {
 	print {$out} "#NEXUS\nbegin data;\n dimensions ntax=$ntaxa nchar=$nchar;\n ";
 	print {$out} "format datatype=dna gap=- missing=?;\n matrix\n";
 	foreach my $taxon (sort {$a cmp $b} keys %align) {
-		print {$out} "$taxon $align{$taxon}\n";
+		print {$out} "  $taxon $align{$taxon}\n";
 	}
 	print {$out} "\n ;\nend;\n\n";
 	print {$out} "begin mrbayes;\n";
 	print {$out} "\tset nowarnings=yes;\n";
 	print {$out} "\tset autoclose=yes;\n";
 	print {$out} "\tlset nst=6 rates=invgamma;\n";
-	print {$out} "\tmcmcp ngen=$total_gens burninfrac=$burnin samplefreq=$samplefreq printfreq=10000 diagnfreq=50000 nruns=$nruns nchains=3 temp=0.45 swapfreq=10;\n";
+	print {$out} "\tmcmcp ngen=$total_gens burninfrac=$burnin samplefreq=$samplefreq printfreq=10000 diagnfreq=50000 nruns=$nruns nchains=$nchains temp=0.45 swapfreq=10;\n";
 	print {$out} "\tmcmc;\n";
 	print {$out} "end;\n";
 	close($out);
@@ -773,6 +941,35 @@ sub get_free_cpus {
 		
 		return $free_cpus;
 #	}
+}
+
+sub summarize {
+	my $array = shift;
+	my @array = @{$array};
+
+	return '' if ($array[0] eq '');
+
+	my $sum = 0;
+	foreach my $num (@array) {
+		$sum += $num;	
+	}
+
+	my $mean = $sum / scalar(@array);
+
+	my $deviation_square_sum;
+	foreach my $num (@array) {
+		$deviation_square_sum += ($mean - $num)**2;
+	}
+
+	my $sd = sqrt($deviation_square_sum / (scalar(@array) - 1));
+
+	if ($mean > 1) {
+		return sprintf("%.0f (± %.1f)", $mean, $sd);
+	}
+	else {
+		return sprintf("%.2f (± %.2f)", $mean, $sd);
+	}
+
 }
 
 sub help {
