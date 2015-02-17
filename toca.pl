@@ -3,6 +3,7 @@ use strict;
 use warnings;
 use POSIX;
 use Getopt::Long;
+use Time::HiRes qw(usleep);
 use Fcntl qw(:flock SEEK_END);
 
 ##################################################################################
@@ -12,7 +13,7 @@ use Fcntl qw(:flock SEEK_END);
 # Set maximum number of forks to number of free CPUs:
 #   I use forks instead of threads because the computer I run analyses on doesn't have 
 #   perl compiled with threads and I've read that perl's threading has poor performance
-my $max_forks = get_free_cpus() - 1;
+my $max_forks = get_free_cpus();
 
 # Fork PIDs 
 my @pids;  
@@ -27,9 +28,10 @@ my $min_contig_length = 300;
 my $alg_conn_threshold = 0.25;
 
 # MrBayes settings:
-#  - These will result in 250,000 samples and a 100,000 generation burnin
+#  - These will result in 250,000 samples per family with a 100,000 generation burnin
 my $nruns = 4;
 my $nchains = 3;
+my $temp = 0.45;
 my $burnin = 0.10;
 my $ngen = 1000000;
 my $samplefreq = 40;
@@ -45,8 +47,8 @@ my $mb = check_path_for_exec("mb");
 my $mbsum = check_path_for_exec("mbsum");
 my $bucky = check_path_for_exec("bucky");
 my $muscle = check_path_for_exec("muscle");
-my $blastn = check_path_for_exec("blastn"); # required by proteinortho
-my $makeblastdb = check_path_for_exec("makeblastdb"); # required by proteinortho
+my $blastn = check_path_for_exec("blastn"); # required by ProteinOrtho
+my $makeblastdb = check_path_for_exec("makeblastdb"); # required by ProteinOrtho
 my $protein_ortho = check_path_for_exec("proteinortho5.pl");
 
 my %polyploids;
@@ -170,6 +172,7 @@ foreach my $pid (@pids) {
 	waitpid($pid, 0);
 }
 
+# Create summaries
 summarize_mb_stddev();
 summarize_mb_swap_freqs();
 
@@ -177,7 +180,7 @@ summarize_mb_swap_freqs();
 # Run BUCKy on the MrBayes output files:
 ########################################
 
-$project_name .= "-a_$alpha";
+$project_name .= "-BUCKy-alpha_$alpha";
 
 if ($alpha !~ /^inf/i) {
 	system("$bucky -a $alpha -n $ngen_bucky -o $project_name *.sum");
@@ -466,6 +469,7 @@ sub analyze_family {
 	flock($mb_stddev_sum_file, LOCK_EX) || die "Could not lock '$mb_stddev_sum_file': $!.\n";
 	seek($mb_stddev_sum_file, 0, SEEK_END) || die "Could not seek '$mb_stddev_sum_file': $!.\n";
 
+	# TODO: ensure mcmc chain is diagnosed on final generation 
 	print {$mb_stddev_sum_file} "$final_std_dev\n";
 
 	flock($mb_stddev_sum_file, LOCK_UN) || die "Could not unlock '$mb_stddev_sum_file': $!.\n";
@@ -644,8 +648,10 @@ sub summarize_mb_swap_freqs {
 			$line .= (" " x ($nchains_width + 1)).("-" x ($header_width - ($nchains_width + 2)))."\n";
 		}
 
+		# Add chain number to the line
 		$line .= sprintf("%${nchains_width}d |", $y + 1);
 
+		# Add actual values from the matrix to the line
 		foreach my $x (0 .. $#{$swap_values[$y]}) {
 			my $summary = summarize($swap_values[$y]->[$x]);
 			if ($summary) {
@@ -712,13 +718,17 @@ sub write_nexus {
 	print {$out} "\tset nowarnings=yes;\n";
 	print {$out} "\tset autoclose=yes;\n";
 	print {$out} "\tlset nst=6 rates=invgamma;\n";
-	print {$out} "\tmcmcp ngen=$total_gens burninfrac=$burnin samplefreq=$samplefreq printfreq=10000 diagnfreq=50000 nruns=$nruns nchains=$nchains temp=0.45 swapfreq=10;\n";
+	print {$out} "\tmcmcp ngen=$total_gens burninfrac=$burnin samplefreq=$samplefreq printfreq=10000 diagnfreq=50000 nruns=$nruns nchains=$nchains temp=$temp swapfreq=10;\n";
 	print {$out} "\tmcmc;\n";
 	print {$out} "end;\n";
 	close($out);
 }
 
 sub okay_to_run {
+
+	# Free up a CPU by sleeping for 10 ms
+	usleep(10000);
+
 	my $running_forks = 0;
 	foreach my $index (reverse(0 .. $#pids)) {
 		my $pid = $pids[$index];
@@ -729,6 +739,7 @@ sub okay_to_run {
 			splice(@pids, $index, 1);
 		}
 	}
+
 	return ($running_forks < $max_forks);
 }
 
@@ -757,7 +768,7 @@ sub get_seq_from_fasta {
 	my $seq;
 	my $is_desired_seq;
 
-	# Scan through file until desired contig is found
+	# Traverse file until desired contig is found
 
 	open(my $align, "<", $file);
 	while (my $line = <$align>) {
@@ -888,7 +899,7 @@ sub get_partial_seq {
 
 	my $partial_seq;
 
-	#TODO: check if split is necessary
+	#TODO: check if split is necessary (I don't think it is)
 
 	my @range = split(",", $range);
 	foreach my $segment (@range) {
@@ -916,39 +927,35 @@ sub rev_comp {
 
 sub get_free_cpus {
 
-#	if ($no_forks) {
-#		return 1; # assume that at least one cpu is free
-#	}
-#	else {
-#
-		# Returns a two-member array containing CPU usage observed by the top,
-		# command is run twice as top's first output is usually inaccurate
-		chomp(my @percent_free_cpu = `top -bn2d0.05 | grep "Cpu(s)"`);
+	# Returns a two-member array containing CPU usage observed by top,
+	# top is run twice as its first output is usually inaccurate
+	chomp(my @percent_free_cpu = `top -bn2d0.05 | grep "Cpu(s)"`);
 
-		my $percent_free_cpu = pop(@percent_free_cpu);
-		my $test = $percent_free_cpu;
-		$percent_free_cpu =~ s/.*?(\d+\.\d)\s*%?ni,\s*(\d+\.\d)\s*%?id.*/$1 + $2/; # also includes %nice as free 
-		$percent_free_cpu = eval($percent_free_cpu);
+	my $percent_free_cpu = pop(@percent_free_cpu);
+	my $test = $percent_free_cpu;
+	$percent_free_cpu =~ s/.*?(\d+\.\d)\s*%?ni,\s*(\d+\.\d)\s*%?id.*/$1 + $2/; # also includes %nice as free 
+	$percent_free_cpu = eval($percent_free_cpu);
 
-		my $total_cpus = `grep 'cpu' /proc/stat | wc -l` - 1;
-		die "$test\n" if (!defined($percent_free_cpu));
+	my $total_cpus = `grep 'cpu' /proc/stat | wc -l` - 1;
+	die "$test\n" if (!defined($percent_free_cpu));
 
-		my $free_cpus = ceil($total_cpus * $percent_free_cpu / 100);
+	my $free_cpus = ceil($total_cpus * $percent_free_cpu / 100);
 
-		if ($free_cpus == 0) {
-			$free_cpus = 1; # assume that at least one cpu can be used
-		}
-		
-		return $free_cpus;
-#	}
+	if ($free_cpus == 0) {
+		$free_cpus = 1; # assume that at least one cpu can be used
+	}
+	
+	return $free_cpus;
 }
 
 sub summarize {
 	my ($array, $type) = @_;
 	my @array = @{$array};
 
+	# Empty space in matrix
 	return '' if ($array[0] eq '');
 
+	# Calculate mean
 	my $sum = 0;
 	foreach my $num (@array) {
 		$sum += $num;	
@@ -956,15 +963,18 @@ sub summarize {
 
 	my $mean = $sum / scalar(@array);
 
+	# Calculate standard deviation
 	my $deviation_square_sum;
 	foreach my $num (@array) {
 		$deviation_square_sum += ($mean - $num)**2;
 	}
 
+	# Divide by zero if sample size is one
 	return $mean if (scalar(@array) - 1 == 0);
 
 	my $sd = sqrt($deviation_square_sum / (scalar(@array) - 1));
 
+	# Reformat number of decimal places to show based on input type
 	if ($type eq "SWAP") {
 		if ($mean > 1) {
 			return sprintf("%.0f (± %.1f)", $mean, $sd);
