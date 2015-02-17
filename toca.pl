@@ -456,7 +456,7 @@ sub analyze_family {
 	flock($mb_swap_sum_file, LOCK_EX) || die "Could not lock '$mb_swap_sum_file': $!.\n";
 	seek($mb_swap_sum_file, 0, SEEK_END) || die "Could not seek '$mb_swap_sum_file': $!.\n";
 
-	print {$mb_swap_sum_file} "@matrix_lines";
+	print {$mb_swap_sum_file} @matrix_lines;
 
 	flock($mb_swap_sum_file, LOCK_UN) || die "Could not unlock '$mb_swap_sum_file': $!.\n";
 	close($mb_swap_sum_file);
@@ -471,7 +471,7 @@ sub analyze_family {
 	flock($mb_stddev_sum_file, LOCK_UN) || die "Could not unlock '$mb_stddev_sum_file': $!.\n";
 	close($mb_stddev_sum_file);
 
-	# The number of generations from each run to exclude
+	# The number of generations from each run to exclude as burnin
 	my $trim = ($ngen * $burnin * $burnin + $nruns) / $nruns;
 	system("$mbsum $family_aligned.*.t -n $trim -o $id.sum >/dev/null 2>&1") || die;
 
@@ -530,7 +530,7 @@ sub reorient_contigs {
 	}
 
 	# Reverse complement any sequences in the reverse direction then rerun this method
-	if (keys %strands > 0) {
+	if (scalar(keys %strands) > 0) {
 
 		print "[$id] Reorienting contig(s).\n";
 
@@ -553,7 +553,7 @@ sub reorient_contigs {
 	}
 }
 
-sub summarize_mb_sttdev {
+sub summarize_mb_stddev {
 
 	# Read in all std devs
 	open(my $mb_stddev_sum_file, "<", $mb_stddev_sum);
@@ -655,12 +655,12 @@ sub summarize_mb_swap_freqs {
 				$line .= ' ' x ($field_width - 1);
 			}
 		}
-		print {$mb_swap_sum} "$line\n";
+		print {$mb_swap_sum_file} "$line\n";
 	}
 
-	print {$mb_swap_sum} "\nUpper diagonal: Mean proportion of successful state exchanges between chains for all genes\n";
-	print {$mb_swap_sum} "Lower diagonal: Mean number of attempted state exchanges between chains for all genes\n\n";
-	print {$mb_swap_sum} "Standard deviations are in parentheses\n";
+	print {$mb_swap_sum_file} "\nUpper diagonal: Mean proportion of successful state exchanges between chains for all genes\n";
+	print {$mb_swap_sum_file} "Lower diagonal: Mean number of attempted state exchanges between chains for all genes\n\n";
+	print {$mb_swap_sum_file} "Standard deviations are in parentheses\n";
 
 	return;
 }
@@ -944,7 +944,7 @@ sub get_free_cpus {
 }
 
 sub summarize {
-	my $array = shift;
+	my ($array, $type) = @_;
 	my @array = @{$array};
 
 	return '' if ($array[0] eq '');
@@ -961,15 +961,21 @@ sub summarize {
 		$deviation_square_sum += ($mean - $num)**2;
 	}
 
+	return $mean if (scalar(@array) - 1 == 0);
+
 	my $sd = sqrt($deviation_square_sum / (scalar(@array) - 1));
 
-	if ($mean > 1) {
-		return sprintf("%.0f (± %.1f)", $mean, $sd);
+	if ($type eq "SWAP") {
+		if ($mean > 1) {
+			return sprintf("%.0f (± %.1f)", $mean, $sd);
+		}
+		else {
+			return sprintf("%.2f (± %.2f)", $mean, $sd);
+		}
 	}
 	else {
-		return sprintf("%.2f (± %.2f)", $mean, $sd);
+		return sprintf("%.5f (± %.6f)", $mean, $sd);
 	}
-
 }
 
 sub help {
