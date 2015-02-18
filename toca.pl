@@ -41,6 +41,7 @@ my $samplefreq = 40;
 my $alpha = 1;
 my $ngen_bucky = 1000000;
 # TODO: allow user to specify more BUCKy settings during invocation
+# TODO: allow user to specify multiple values for alpha
 
 # Check that dependencies are present in user's PATH
 my $mb = check_path_for_exec("mb");
@@ -75,7 +76,13 @@ foreach my $transcriptome (@transcriptomes) {
 
 my $project_name = "toca-".time();
 my $mb_swap_sum = $project_name."-mb-swap.txt";
-my $mb_stddev_sum = $project_name."-mb-stddev.txt";
+my $mb_stddev_sum = $project_name."-mb-std-dev.txt";
+
+my $mb_sum_dir = $project_name."-mb-sums";
+my $align_dir = $project_name."-alignments";
+
+mkdir($align_dir) if (!-e $align_dir) || die "Could not create directory '$align_dir': $!.\n";
+mkdir($mb_sum_dir) if (!-e $mb_sum_dir) || die "Could not create directory '$mb_sum_dir': $!.\n";
 
 system("$protein_ortho @transcriptomes -p=blastn+ -clean -conn=$alg_conn_threshold -project=$project_name");
 
@@ -180,14 +187,20 @@ summarize_mb_swap_freqs();
 # Run BUCKy on the MrBayes output files:
 ########################################
 
-$project_name .= "-BUCKy-alpha_$alpha";
-
 if ($alpha !~ /^inf/i) {
-	system("$bucky -a $alpha -n $ngen_bucky -o $project_name *.sum");
+	system("$bucky -a $alpha -n $ngen_bucky -o $project_name-BUCKy-alpha_$alpha $mb_sum_dir/*.sum");
 }
 else {
-	system("$bucky --use-independence-prior -n $ngen_bucky -o $project_name *.sum");
+	system("$bucky --use-independence-prior -n $ngen_bucky -o $project_name-BUCKy-alpha_$alpha $mb_sum_dir/*.sum");
 }
+
+# Clean up MrBayes summary files
+unlink(glob("$mb_sum_dir/*"));
+rmdir($mb_sum_dir);
+
+# Tarball and gzip alignments
+system("tar czf $project_name-alignments.tar.gz $align_dir/ --remove-files");
+rmdir($align_dir);
 
 sub reduce_family_to_quartets {
 	my $members = shift;
@@ -275,13 +288,13 @@ sub analyze_family {
 	my $family_raw = "$id-raw.fasta";
 
 	# The aligned sequences of the family
-	my $family_aligned = "$id-aligned.nex";
+	my $family_aligned = "$align_dir/$id-aligned.nex";
 
 	# Only the homologous sequence of the family
 	my $family_reduced = "$id-reduced.fasta";
 
 	# Stores STDOUT of MrBayes run
-	my $mb_log_name = "$family_aligned.mb.log";
+	my $mb_log_name = "$id-aligned.nex.mb.log";
 
 	# Add all of the temporary files we don't care about into the deletion array
 	push(@unlink, $family_raw, $family_reduced, $family_raw.".nhr", $family_raw.".nin", $family_raw.".nsq", 
@@ -429,7 +442,6 @@ sub analyze_family {
 
 	# Run MrBayes
 	print "[$id] Running MrBayes and summarizing runs.\n";
-	#system("$mb $family_aligned >/dev/null") || die;
 	system("$mb $family_aligned > $mb_log_name") || die;
 
 	# Open MrBayes log, extract swap frequencies + final std dev of split frequencies
@@ -444,12 +456,12 @@ sub analyze_family {
 		$line =~ s/^\s+|\s+$//g;
 		next if ($line eq "");
 
+		# Get last standard deviation of split frequencies
 		if ($line =~ /Average standard deviation of split frequencies: (\S+)/) {
 			$final_std_dev = $1;
 		}
 
 		if ($line =~ /(\d+) \|/) {
-			#print {$storage} $line,"\n";
 			push(@matrix_lines, "$line\n");
 		}
 	}
@@ -477,13 +489,19 @@ sub analyze_family {
 
 	# The number of generations from each run to exclude as burnin
 	my $trim = ($ngen * $burnin * $burnin + $nruns) / $nruns;
-	system("$mbsum $family_aligned.*.t -n $trim -o $id.sum >/dev/null 2>&1") || die;
+	system("$mbsum $family_aligned.*.t -n $trim -o $mb_sum_dir/$id.sum >/dev/null 2>&1") || die;
 
 	unlink(@unlink);
 }
 
 sub INT_handler {
 	unlink(@unlink); 
+	unlink(glob("$align_dir/*"));
+	unlink(glob("$mb_sum_dir/*"));
+
+	rmdir($align_dir);
+	rmdir($mb_sum_dir);
+
 	kill -9, @pids; 
 	exit(0);
 }
@@ -653,7 +671,7 @@ sub summarize_mb_swap_freqs {
 
 		# Add actual values from the matrix to the line
 		foreach my $x (0 .. $#{$swap_values[$y]}) {
-			my $summary = summarize($swap_values[$y]->[$x]);
+			my $summary = summarize($swap_values[$y]->[$x], "SWAP");
 			if ($summary) {
 				$line .= sprintf("%${field_width}s", $summary);
 			}
