@@ -75,6 +75,7 @@ foreach my $transcriptome (@transcriptomes) {
 ####################################
 
 my $project_name = "toca-".time();
+my $family_id = $project_name."-families.txt";
 my $mb_swap_sum = $project_name."-mb-swap.txt";
 my $mb_stddev_sum = $project_name."-mb-std-dev.txt";
 
@@ -87,8 +88,11 @@ mkdir($mb_sum_dir) if (!-e $mb_sum_dir) || die "Could not create directory '$mb_
 system("$protein_ortho @transcriptomes -p=blastn+ -clean -conn=$alg_conn_threshold -project=$project_name");
 
 # Reduce output only to families containing protein(s) in each transcriptome
+print "\nParsing ProteinOrtho output for gene families.\n";
+
 my %families;
 my $count = 0;
+open(my $family_id_file, ">", $family_id);
 open(my $ortho_output, "<", "$project_name.proteinortho") || die "Could not open ProteinOrtho output: $!.\n";
 FAMILY: while (my $line = <$ortho_output>) {
 
@@ -123,19 +127,27 @@ FAMILY: while (my $line = <$ortho_output>) {
 			$contigs[$index] = \@split_contig;
 		}
 		$families{$count} = \@contigs;
-		$count++;
 
-		print "$count: ";
-		foreach my $contig (@contigs) {
-			print "@{$contig} ";
+	#	print "$count: ";
+	#	foreach my $contig (@contigs) {
+	#		print "@{$contig} ";
+	#	}
+	#	print "\n";
+		print {$family_id_file} "$count:\n";
+		foreach my $index (0 .. $#contigs) {
+			my $contig = $contigs[$index];
+			my $transcriptome = $transcriptomes[$index];
+			print {$family_id_file} "  $transcriptome: @{$contig}\n";
 		}
-		print "\n";
+		print {$family_id_file} "\n";
+
+		$count++;
 	}
 }
 close($ortho_output);
 
-die "No orthologous families were found.\n" if ($count == 0);
-print "$count families passed selection criteria.\n";
+die "No orthologous families were found.\n\n" if ($count == 0);
+print "$count families passed selection criteria.\n\n";
 
 # Don't let forks become zombies
 $SIG{CHLD} = 'IGNORE';
