@@ -86,7 +86,7 @@ my $align_dir = $project_name."-alignments";
 mkdir($align_dir) if (!-e $align_dir) || die "Could not create directory '$align_dir': $!.\n";
 mkdir($mb_sum_dir) if (!-e $mb_sum_dir) || die "Could not create directory '$mb_sum_dir': $!.\n";
 
-system("$protein_ortho @transcriptomes -p=blastn+ -clean -conn=$alg_conn_threshold -project=$project_name");
+system("$protein_ortho @transcriptomes -p=blastn+ -clean -conn=$alg_conn_threshold -project=$project_name") && die;
 
 # Reduce output only to families containing protein(s) in each transcriptome
 logger('', "Parsing ProteinOrtho output for gene families...");
@@ -146,7 +146,7 @@ close($ortho_output);
 #print "$count families passed selection criteria.\n\n";
 if ($count == 0) {
 	logger('', "No orthologous families were found.\n");
-	die;
+	exit(0);
 }
 logger('', "$count families passed selection criteria.\n");
 
@@ -164,7 +164,7 @@ logger('', "Beginning analyses for each family...");
 
 # Run each family
 foreach my $family (sort { $a <=> $b } keys %families) {
-#foreach my $family (0 .. 0) {
+#foreach my $family (0 .. 40) {
 	my $members = $families{$family};
 	my @quartets = reduce_family_to_quartets($members);
 
@@ -330,10 +330,7 @@ sub analyze_family {
 		push(@unlink, "$family_aligned.run$run.p");
 	}
 
-	$SIG{INT} = sub { unlink(@unlink); exit(0) };
-	$SIG{KILL} = sub { unlink(@unlink); exit(0) };
-#	$SIG{INT} = sub { unlink(@unlink); print "@unlink\n"; exit(0) };
-#	$SIG{KILL} = sub { unlink(@unlink); print "@unlink\n"; exit(0) };
+	$SIG{TERM} = sub { unlink(@unlink); kill -9, $$; exit(0) };
 
 	# Create the raw sequence file
 	open(my $raw, ">", $family_raw);
@@ -415,7 +412,6 @@ sub analyze_family {
 	}
 
 	# Check that all contigs actually share sequence
-	#if (keys %quartet < 4) {
 	if (scalar(keys %quartet) < scalar(@transcriptomes)) {
 		unlink(@unlink);
 		logger($id, "Could not identify any homologous sites for a species in this family.");
@@ -450,7 +446,7 @@ sub analyze_family {
 		# Check that the sequence meets the minimum length requirements
 		if ($reduced_length < $min_contig_length) {
 			unlink(@unlink);
-			logger($id, "A sequence did not meet the minimum length requirements.");
+			logger($id, "A sequence was too short.");
 			exit(0);
 		}
 		print {$out} "\n";
@@ -524,6 +520,8 @@ sub analyze_family {
 }
 
 sub INT_handler {
+	logger('', "\rKeyboard interupt detected, stopping analyses and cleaning up.");
+
 	unlink(@unlink); 
 	unlink(glob("$align_dir/*"));
 	unlink(glob("$mb_sum_dir/*"));
@@ -531,7 +529,8 @@ sub INT_handler {
 	rmdir($align_dir);
 	rmdir($mb_sum_dir);
 
-	kill -9, @pids; 
+	#kill -15, @pids; 
+	kill 15, @pids; 
 	exit(0);
 }
 
