@@ -75,7 +75,6 @@ foreach my $transcriptome (@transcriptomes) {
 ####################################
 
 my $project_name = "toca-".time();
-#my $project_name = "toca-1424288469";
 my $family_id = $project_name."-families.txt";
 my $mb_swap_sum = $project_name."-mb-swap.txt";
 my $mb_stddev_sum = $project_name."-mb-std-dev.txt";
@@ -86,10 +85,11 @@ my $align_dir = $project_name."-alignments";
 mkdir($align_dir) if (!-e $align_dir) || die "Could not create directory '$align_dir': $!.\n";
 mkdir($mb_sum_dir) if (!-e $mb_sum_dir) || die "Could not create directory '$mb_sum_dir': $!.\n";
 
+logger('', "\nRunning ProteinOrtho to identify orthologous proteins...\n");
 system("$protein_ortho @transcriptomes -p=blastn+ -clean -conn=$alg_conn_threshold -project=$project_name") && die;
 
 # Reduce output only to families containing protein(s) in each transcriptome
-logger('', "Parsing ProteinOrtho output for gene families...");
+logger('', "\nParsing ProteinOrtho output for gene families...");
 
 my %families;
 my $count = 0;
@@ -195,7 +195,7 @@ foreach my $pid (@pids) {
 	waitpid($pid, 0);
 }
 
-logger('', "Analyses completed for all families.");
+logger('', "Analyses completed for all families.\n");
 logger('', "Summarizing MrBayes MCMC quality...");
 
 # Create summaries
@@ -214,8 +214,7 @@ if ($alpha !~ /^inf/i) {
 else {
 	system("$bucky --use-independence-prior -n $ngen_bucky -o $project_name-BUCKy-alpha_$alpha $mb_sum_dir/*.sum");
 }
-logger('', "Completed BUCKy.");
-logger('', "Cleaning up and tarballing...");
+logger('', "Cleaning up and organizing remaining files...");
 
 # Clean up MrBayes summary files
 unlink(glob("$mb_sum_dir/*"));
@@ -516,21 +515,28 @@ sub analyze_family {
 	my $trim = ($ngen * $burnin * $burnin + $nruns) / $nruns;
 	system("$mbsum $family_aligned.*.t -n $trim -o $mb_sum_dir/$id.sum >/dev/null 2>&1") || die;
 
+	logger($id, "All analyses successfully completed.");
+
 	unlink(@unlink);
 }
 
 sub INT_handler {
 	logger('', "\rKeyboard interupt detected, stopping analyses and cleaning up.");
+	kill 15, @pids; 
 
 	unlink(@unlink); 
 	unlink(glob("$align_dir/*"));
 	unlink(glob("$mb_sum_dir/*"));
+	unlink(glob("$project_name*")); 
 
 	rmdir($align_dir);
 	rmdir($mb_sum_dir);
 
-	#kill -15, @pids; 
-	kill 15, @pids; 
+#	until (!-e $align_dir) {
+#		rmdir($align_dir);
+#	}
+
+	#kill 15, @pids; 
 	exit(0);
 }
 
@@ -1037,18 +1043,21 @@ sub summarize {
 sub logger {
 	my ($id, $msg) = @_;
 
-	my $time = localtime(time());
+	my $time = "[".localtime(time())."]";
 
-	#$id = "[$id]";
+	if ($msg =~ s/^\n//) {
+		$time = "\n$time";
+	}
+
 	my $longest_possible_id = length(scalar(keys %families)) + 2;
 
 	if (length($id) > 0) {
 		$id = "0".$id while (length($id) < $longest_possible_id);
 
-		printf("[$time] [%${longest_possible_id}s] $msg\n", $id); 
+		printf("$time [%${longest_possible_id}s] $msg\n", $id); 
 	}
 	else {
-		print "[$time] $msg\n"; 
+		print "$time $msg\n"; 
 	}
 }
 
