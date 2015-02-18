@@ -75,6 +75,7 @@ foreach my $transcriptome (@transcriptomes) {
 ####################################
 
 my $project_name = "toca-".time();
+#my $project_name = "toca-1424288469";
 my $family_id = $project_name."-families.txt";
 my $mb_swap_sum = $project_name."-mb-swap.txt";
 my $mb_stddev_sum = $project_name."-mb-std-dev.txt";
@@ -88,7 +89,7 @@ mkdir($mb_sum_dir) if (!-e $mb_sum_dir) || die "Could not create directory '$mb_
 system("$protein_ortho @transcriptomes -p=blastn+ -clean -conn=$alg_conn_threshold -project=$project_name");
 
 # Reduce output only to families containing protein(s) in each transcriptome
-print "\nParsing ProteinOrtho output for gene families.\n";
+logger('', "Parsing ProteinOrtho output for gene families...");
 
 my %families;
 my $count = 0;
@@ -128,11 +129,6 @@ FAMILY: while (my $line = <$ortho_output>) {
 		}
 		$families{$count} = \@contigs;
 
-	#	print "$count: ";
-	#	foreach my $contig (@contigs) {
-	#		print "@{$contig} ";
-	#	}
-	#	print "\n";
 		print {$family_id_file} "$count:\n";
 		foreach my $index (0 .. $#contigs) {
 			my $contig = $contigs[$index];
@@ -146,8 +142,13 @@ FAMILY: while (my $line = <$ortho_output>) {
 }
 close($ortho_output);
 
-die "No orthologous families were found.\n\n" if ($count == 0);
-print "$count families passed selection criteria.\n\n";
+#die "No orthologous families were found.\n\n" if ($count == 0);
+#print "$count families passed selection criteria.\n\n";
+if ($count == 0) {
+	logger('', "No orthologous families were found.\n");
+	die;
+}
+logger('', "$count families passed selection criteria.\n");
 
 # Don't let forks become zombies
 $SIG{CHLD} = 'IGNORE';
@@ -159,8 +160,11 @@ $SIG{INT} = 'INT_handler';
 # Analyze up to $max_forks concurrently:
 ########################################
 
+logger('', "Beginning analyses for each family...");
+
 # Run each family
 foreach my $family (sort { $a <=> $b } keys %families) {
+#foreach my $family (0 .. 0) {
 	my $members = $families{$family};
 	my @quartets = reduce_family_to_quartets($members);
 
@@ -191,20 +195,27 @@ foreach my $pid (@pids) {
 	waitpid($pid, 0);
 }
 
+logger('', "Analyses completed for all families.");
+logger('', "Summarizing MrBayes MCMC quality...");
+
 # Create summaries
 summarize_mb_stddev();
 summarize_mb_swap_freqs();
+logger('', "MrBayes MCMC quality summaries complete.");
 
 ########################################
 # Run BUCKy on the MrBayes output files:
 ########################################
 
+logger('', "Running BUCKy with $ngen_bucky MCMC generations and alpha = $alpha...\n");
 if ($alpha !~ /^inf/i) {
 	system("$bucky -a $alpha -n $ngen_bucky -o $project_name-BUCKy-alpha_$alpha $mb_sum_dir/*.sum");
 }
 else {
 	system("$bucky --use-independence-prior -n $ngen_bucky -o $project_name-BUCKy-alpha_$alpha $mb_sum_dir/*.sum");
 }
+logger('', "Completed BUCKy.");
+logger('', "Cleaning up and tarballing...");
 
 # Clean up MrBayes summary files
 unlink(glob("$mb_sum_dir/*"));
@@ -213,6 +224,8 @@ rmdir($mb_sum_dir);
 # Tarball and gzip alignments
 system("tar czf $project_name-alignments.tar.gz $align_dir/ --remove-files");
 rmdir($align_dir);
+
+logger('', "Script execution complete.\n");
 
 sub reduce_family_to_quartets {
 	my $members = shift;
@@ -319,6 +332,8 @@ sub analyze_family {
 
 	$SIG{INT} = sub { unlink(@unlink); exit(0) };
 	$SIG{KILL} = sub { unlink(@unlink); exit(0) };
+#	$SIG{INT} = sub { unlink(@unlink); print "@unlink\n"; exit(0) };
+#	$SIG{KILL} = sub { unlink(@unlink); print "@unlink\n"; exit(0) };
 
 	# Create the raw sequence file
 	open(my $raw, ">", $family_raw);
@@ -328,7 +343,7 @@ sub analyze_family {
 	}
 	close($raw);
 
-	print "[$id] Reducing sequence to homologous sites.\n";
+	logger($id, "Reducing sequence to homologous sites.");
 
 	# Reverse complement contigs (if needed) so they that are all in the same direction
 	reorient_contigs($id, \%sequences);
@@ -403,13 +418,14 @@ sub analyze_family {
 	#if (keys %quartet < 4) {
 	if (scalar(keys %quartet) < scalar(@transcriptomes)) {
 		unlink(@unlink);
-		die "[$id] Could not identify any homologous sites for a species in this family.\n";
+		logger($id, "Could not identify any homologous sites for a species in this family.");
+		exit(0);
 	}
 	foreach my $taxon (keys %counts) {
 		my $count = $counts{$taxon};
 		if ($count < scalar(@transcriptomes) - 1) {
 			unlink(@unlink);
-			die "[$id] Some taxa did not share homology.\n";
+			logger($id, "Some taxa did not share homology.");
 			exit(0);
 		}
 	}
@@ -434,7 +450,8 @@ sub analyze_family {
 		# Check that the sequence meets the minimum length requirements
 		if ($reduced_length < $min_contig_length) {
 			unlink(@unlink);
-			die "[$id] A sequence did not meet the minimum length requirements.\n";
+			logger($id, "A sequence did not meet the minimum length requirements.");
+			exit(0);
 		}
 		print {$out} "\n";
 	}
@@ -445,7 +462,7 @@ sub analyze_family {
 	######################################################
 
 	# Align with MUSCLE
-	print "[$id] Aligning reduced sites with MUSCLE.\n";
+	logger($id, "Aligning reduced sites with MUSCLE.");
 	system("$muscle -in $family_reduced -out $family_aligned >/dev/null 2>&1") || die;
 
 	# Load alignment created by MUSCLE, and rewrite it in NEXUS format with MrBayes commands
@@ -453,7 +470,7 @@ sub analyze_family {
 	write_nexus({'OUT' => $family_aligned, 'ALIGN' => \%family_aligned});
 
 	# Run MrBayes
-	print "[$id] Running MrBayes and summarizing runs.\n";
+	logger($id, "Running MrBayes and summarizing runs.");
 	system("$mb $family_aligned > $mb_log_name") || die;
 
 	# Open MrBayes log, extract swap frequencies + final std dev of split frequencies
@@ -558,7 +575,7 @@ sub reorient_contigs {
 		my $count = $quartet{$taxon};
 		if ($count < scalar(@transcriptomes) - 1) {
 			unlink(@unlink);
-			die "[$id] Some taxa did not share homology.\n";
+			logger($id, "Some taxa did not share homology.");
 			exit(0);
 		}
 	}
@@ -566,7 +583,7 @@ sub reorient_contigs {
 	# Reverse complement any sequences in the reverse direction then rerun this method
 	if (scalar(keys %strands) > 0) {
 
-		print "[$id] Reorienting contig(s).\n";
+		logger($id, "Reorienting contig(s).");
 
 		open(my $raw, ">", $family_raw);
 		foreach my $contig (keys %quartet) {
@@ -1014,14 +1031,34 @@ sub summarize {
 		}
 	}
 	else {
-		return sprintf("%.5f (± %.6f)", $mean, $sd);
+		return sprintf("%.6f (± %.6f)", $mean, $sd);
 	}
 }
 
+sub logger {
+	my ($id, $msg) = @_;
+
+	my $time = localtime(time());
+
+	#$id = "[$id]";
+	my $longest_possible_id = length(scalar(keys %families)) + 2;
+
+	if (length($id) > 0) {
+		$id = "0".$id while (length($id) < $longest_possible_id);
+
+		printf("[$time] [%${longest_possible_id}s] $msg\n", $id); 
+	}
+	else {
+		print "[$time] $msg\n"; 
+	}
+}
+
+#TODO: unstub
 sub help {
 	return "";
 }
 
+#TODO: unstub
 sub usage {
 	return "";
 }
