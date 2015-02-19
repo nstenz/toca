@@ -3,8 +3,10 @@ use strict;
 use warnings;
 use POSIX;
 use Getopt::Long;
+use Cwd qw(abs_path);
 use Time::HiRes qw(usleep);
 use Fcntl qw(:flock SEEK_END);
+use File::Path qw(remove_tree);
 
 ##################################################################################
 ## Initialize Global variables, check for dependecies, parse command line options:
@@ -56,7 +58,7 @@ my %polyploids;
 my @polyploids;
 my @transcriptomes;
 GetOptions(
-	"transcriptomes|t:s{4,}" => \@transcriptomes,
+	"transcriptomes|t=s{4,}" => \@transcriptomes,
 	"polyploids|p:s{0,}"     => \@polyploids,
 	"help|h"                 => \&help,
 );
@@ -70,23 +72,37 @@ foreach my $transcriptome (@transcriptomes) {
 	die "Could not locate '$transcriptome'.\n".&usage if (!-e $transcriptome);
 }
 
+# Initialize our working directory and create symlinks to transcriptomes
+my $project_name = "toca-".time();
+mkdir($project_name) if (!-e $project_name) || die "Could not create directory '$project_name': $!.\n";
+foreach my $index (0 .. $#transcriptomes) {
+	my $transcriptome = $transcriptomes[$index];
+	my $transcriptome_abs_path = abs_path($transcriptome);
+	(my $transcriptome_root = $transcriptome) =~ s/.*\///;
+
+	system("ln -s $transcriptome_abs_path $ENV{PWD}/$project_name/$transcriptome_root");
+	$transcriptomes[$index] = $transcriptome_root;
+}
+
+chdir($project_name);
+
 ####################################
 # Run ProteinOrtho and parse output:
 ####################################
 
-my $project_name = "toca-".time();
-my $family_id = $project_name."-families.txt";
-my $mb_swap_sum = $project_name."-mb-swap.txt";
-my $mb_stddev_sum = $project_name."-mb-std-dev.txt";
+my $family_id = "toca.family-members";
+my $final_mb_sum = "mb-mcmc-avgs.txt";
+my $mb_swap_sum = "mb-avg-swap-freq.txt";
+my $mb_stddev_sum = "mb-avg-split-std-dev.txt";
 
-my $mb_sum_dir = $project_name."-mb-sums";
-my $align_dir = $project_name."-alignments";
+my $mb_sum_dir = "mb-sums";
+my $align_dir = "alignments";
+
+logger('', "\nRunning ProteinOrtho to identify orthologous proteins...\n");
+system("$protein_ortho @transcriptomes -p=blastn+ -clean -conn=$alg_conn_threshold -project=toca") && die;
 
 mkdir($align_dir) if (!-e $align_dir) || die "Could not create directory '$align_dir': $!.\n";
 mkdir($mb_sum_dir) if (!-e $mb_sum_dir) || die "Could not create directory '$mb_sum_dir': $!.\n";
-
-logger('', "\nRunning ProteinOrtho to identify orthologous proteins...\n");
-system("$protein_ortho @transcriptomes -p=blastn+ -clean -conn=$alg_conn_threshold -project=$project_name") && die;
 
 # Reduce output only to families containing protein(s) in each transcriptome
 logger('', "\nParsing ProteinOrtho output for gene families...");
@@ -94,7 +110,7 @@ logger('', "\nParsing ProteinOrtho output for gene families...");
 my %families;
 my $count = 0;
 open(my $family_id_file, ">", $family_id);
-open(my $ortho_output, "<", "$project_name.proteinortho") || die "Could not open ProteinOrtho output: $!.\n";
+open(my $ortho_output, "<", "toca.proteinortho") || die "Could not open ProteinOrtho output: $!.\n";
 FAMILY: while (my $line = <$ortho_output>) {
 
 	chomp($line); 
@@ -141,9 +157,8 @@ FAMILY: while (my $line = <$ortho_output>) {
 	}
 }
 close($ortho_output);
+close($family_id_file);
 
-#die "No orthologous families were found.\n\n" if ($count == 0);
-#print "$count families passed selection criteria.\n\n";
 if ($count == 0) {
 	logger('', "No orthologous families were found.\n");
 	exit(0);
@@ -164,11 +179,10 @@ logger('', "Beginning analyses for each family...");
 
 # Run each family
 foreach my $family (sort { $a <=> $b } keys %families) {
-#foreach my $family (0 .. 40) {
 	my $members = $families{$family};
 	my @quartets = reduce_family_to_quartets($members);
 
-	# Run each quartet separately 
+	# Run each quartet with a separate fork
 	foreach my $index (0 .. $#quartets) {
 		my $quartet = $quartets[$index];
 
@@ -201,6 +215,26 @@ logger('', "Summarizing MrBayes MCMC quality...");
 # Create summaries
 summarize_mb_stddev();
 summarize_mb_swap_freqs();
+
+# Read in std deviation summary
+open(my $mb_stddev_sum_file, "<", $mb_stddev_sum);
+my @mb_summary_out = <$mb_stddev_sum_file>;
+close($mb_stddev_sum_file);
+
+# Add in swap frequency summary
+open(my $mb_swap_sum_file, "<", $mb_swap_sum);
+push(@mb_summary_out, <$mb_swap_sum_file>);
+close($mb_swap_sum_file);
+
+# Output to new file
+open(my $final_mb_sum_file, ">", $final_mb_sum);
+print {$final_mb_sum_file} @mb_summary_out;
+close($final_mb_sum_file);
+
+# Remove files used to create final summary
+unlink($mb_swap_sum);
+unlink($mb_stddev_sum);
+
 logger('', "MrBayes MCMC quality summaries complete.");
 
 ########################################
@@ -209,20 +243,19 @@ logger('', "MrBayes MCMC quality summaries complete.");
 
 logger('', "Running BUCKy with $ngen_bucky MCMC generations and alpha = $alpha...\n");
 if ($alpha !~ /^inf/i) {
-	system("$bucky -a $alpha -n $ngen_bucky -o $project_name-BUCKy-alpha_$alpha $mb_sum_dir/*.sum");
+	system("$bucky -a $alpha -n $ngen_bucky -o BUCKy-alpha_$alpha $mb_sum_dir/*.sum");
 }
 else {
-	system("$bucky --use-independence-prior -n $ngen_bucky -o $project_name-BUCKy-alpha_$alpha $mb_sum_dir/*.sum");
+	system("$bucky --use-independence-prior -n $ngen_bucky -o BUCKy-alpha_$alpha $mb_sum_dir/*.sum");
 }
 logger('', "Cleaning up and organizing remaining files...");
 
 # Clean up MrBayes summary files
-unlink(glob("$mb_sum_dir/*"));
-rmdir($mb_sum_dir);
+remove_tree($mb_sum_dir);
 
 # Tarball and gzip alignments
-system("tar czf $project_name-alignments.tar.gz $align_dir/ --remove-files");
-rmdir($align_dir);
+system("tar czf alignments.tar.gz $align_dir/");
+remove_tree($align_dir);
 
 logger('', "Script execution complete.\n");
 
@@ -522,21 +555,25 @@ sub analyze_family {
 
 sub INT_handler {
 	logger('', "\rKeyboard interupt detected, stopping analyses and cleaning up.");
+
+	# Send SIGTERM to forks, they will in turn sent SIGKILL to their pgroup
 	kill 15, @pids; 
 
-	unlink(@unlink); 
-	unlink(glob("$align_dir/*"));
-	unlink(glob("$mb_sum_dir/*"));
-	unlink(glob("$project_name*")); 
+	sleep(1);
 
-	rmdir($align_dir);
-	rmdir($mb_sum_dir);
+	# Move back into the directory script was called in
+	chdir("..");
 
-#	until (!-e $align_dir) {
-#		rmdir($align_dir);
-#	}
+	# Try to delete directory five times, if it can't be deleted print an error message
+	my $count = 0;
+	until (!-e $project_name || $count == 5) {
+		$count++;
 
-	#kill 15, @pids; 
+		remove_tree($project_name, {error => \my $err});
+		sleep(1);
+	}
+	logger('', "Could not clean all files in './$project_name/'.") if ($count == 5);
+
 	exit(0);
 }
 
@@ -620,7 +657,7 @@ sub summarize_mb_stddev {
 
 	# Reopen for output
 	open($mb_stddev_sum_file, ">", $mb_stddev_sum);
-	print {$mb_stddev_sum_file} "Average standard deviation of split frequencies across all families: $summary\n";
+	print {$mb_stddev_sum_file} "Average standard deviation of split frequencies across all families: $summary\n\n";
 	close($mb_stddev_sum_file);
 
 	return;
@@ -718,7 +755,7 @@ sub summarize_mb_swap_freqs {
 
 	print {$mb_swap_sum_file} "\nUpper diagonal: Mean proportion of successful state exchanges between chains for all genes\n";
 	print {$mb_swap_sum_file} "Lower diagonal: Mean number of attempted state exchanges between chains for all genes\n\n";
-	print {$mb_swap_sum_file} "Standard deviations are in parentheses\n";
+	print {$mb_swap_sum_file} "Values in parentheses are standard deviations\n";
 
 	return;
 }
@@ -1045,8 +1082,12 @@ sub logger {
 
 	my $time = "[".localtime(time())."]";
 
+	# Allow for new lines and carriage returns before message
 	if ($msg =~ s/^\n//) {
 		$time = "\n$time";
+	}
+	elsif ($msg =~ s/^\r//) {
+		$time = "\r$time";
 	}
 
 	my $longest_possible_id = length(scalar(keys %families)) + 2;
@@ -1070,4 +1111,3 @@ sub help {
 sub usage {
 	return "";
 }
-
