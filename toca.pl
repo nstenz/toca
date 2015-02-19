@@ -37,13 +37,13 @@ my $temp = 0.45;
 my $burnin = 0.10;
 my $ngen = 1000000;
 my $samplefreq = 40;
-# TODO: allow user to specify more mb settings during invocation
 
 # BUCKy settings:
-my $alpha = 1;
+my @alphas;
 my $ngen_bucky = 1000000;
-# TODO: allow user to specify more BUCKy settings during invocation
-# TODO: allow user to specify multiple values for alpha
+
+# Name of output directory
+my $project_name = "toca-".time();
 
 # Check that dependencies are present in user's PATH
 my $mb = check_path_for_exec("mb");
@@ -58,13 +58,32 @@ my %polyploids;
 my @polyploids;
 my @transcriptomes;
 GetOptions(
-	"transcriptomes|t=s{4,}" => \@transcriptomes,
-	"polyploids|p:s{0,}"     => \@polyploids,
-	"help|h"                 => \&help,
+	# General Settings
+	"input|i=s{4,}"         => \@transcriptomes,
+	"polyploids|p=s{0,}"    => \@polyploids,
+	"output_directory|o=s"  => \$project_name,
+	"min_contig_length|l=i" => \$min_contig_length,
+	# ProteinOrtho
+	"alg_conn|c=f"          => \$alg_conn_threshold,
+	# MrBayes
+	"mb_nruns=i"            => \$nruns,
+	"mb_nchains=i"          => \$nchains,
+	"mb_temp|t=f"           => \$temp,
+	"mb_burnin|b=f"         => \$burnin,
+	"mb_ngen=i"             => \$ngen,
+	"mb_samplefreq=i"       => \$samplefreq,
+	# BUCKy
+	"alpha|a=s{0,}"         => \@alphas,
+	"bucky_ngen=i"          => \$ngen_bucky,
+
+	"help|h"                => \&help,
 );
 foreach my $polyploid (@polyploids) {
 	$polyploids{$polyploid}++;
 }
+
+# Default to alpha = 1 if unspecified
+push(@alphas, 1) if (!@alphas);
 
 # Input error handling
 die "You need to specify at least four fasta files containing transcriptomes.\n".&usage if (scalar(@transcriptomes) < 4);
@@ -73,7 +92,6 @@ foreach my $transcriptome (@transcriptomes) {
 }
 
 # Initialize our working directory and create symlinks to transcriptomes
-my $project_name = "toca-".time();
 mkdir($project_name) if (!-e $project_name) || die "Could not create directory '$project_name': $!.\n";
 foreach my $index (0 .. $#transcriptomes) {
 	my $transcriptome = $transcriptomes[$index];
@@ -241,12 +259,14 @@ logger('', "MrBayes MCMC quality summaries complete.");
 # Run BUCKy on the MrBayes output files:
 ########################################
 
-logger('', "Running BUCKy with $ngen_bucky MCMC generations and alpha = $alpha...\n");
-if ($alpha !~ /^inf/i) {
-	system("$bucky -a $alpha -n $ngen_bucky -o BUCKy-alpha_$alpha $mb_sum_dir/*.sum");
-}
-else {
-	system("$bucky --use-independence-prior -n $ngen_bucky -o BUCKy-alpha_$alpha $mb_sum_dir/*.sum");
+foreach my $alpha (@alphas) {
+	logger('', "Running BUCKy with $ngen_bucky MCMC generations and alpha = $alpha...\n");
+	if ($alpha !~ /^inf/i) {
+		system("$bucky -a $alpha -n $ngen_bucky -o BUCKy-alpha_$alpha $mb_sum_dir/*.sum");
+	}
+	else {
+		system("$bucky --use-independence-prior -n $ngen_bucky -o BUCKy-alpha_$alpha $mb_sum_dir/*.sum");
+	}
 }
 logger('', "Cleaning up and organizing remaining files...");
 
