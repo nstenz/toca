@@ -26,16 +26,16 @@ toca.pl -i transcriptome1.fa transcriptome2.fa transcriptome3.fa transcriptome4.
 ```
 
 ### Command Line Options
-For further fine tuning of the script, the following options can also be specified:
+For further fine-tuning of the script, the following options can also be specified:
 
 | Option Flag(s)             | Option Descripton                                                                                    | Default |
 |:---------------------------|:----------------------------------------------------------------------------------------------------:|:-------:|
-| -i OR --input              |file names of at least four transcriptomes (in FASTA format) to use for analyses                      | none    |
-| -p OR --polyploids         |file names of transcriptomes which should be treated as polyploids, this allows protein families with multiple copies from the polyploid to run| none |
-| -o OR --output_directory   |name of the directory to store output files in                                                        | "toca-" + Unix time of script invocation) |
-| -l OR --min_seq_length     |the minimum sequence length (nucleotides) of each family member in order to be analyzed               | 300 nucleotides |
-| -T OR --num_threads        |the number of families to analyze concurrently                                                        | current number of free CPUs |
-| -c OR --p_ortho_alg_conn   |the minimum algebraic connectivity for ProteinOrtho                                                   | 0.25 |
+| -i, --input                |file names of at least four transcriptomes (in FASTA format) to use for analyses                      | none    |
+| -p, --polyploids           |file names of transcriptomes which should be treated as polyploids, this allows protein families with multiple copies from the polyploid to run| none |
+| -o, --out_dir              |name of the directory to store output files in                                                        | "toca-" + Unix time of script invocation) |
+| -l, --min_length           |the minimum sequence length (nucleotides) of each family member in order to be analyzed               | 300 nucleotides |
+| -T, --n_threads            |the number of families to analyze concurrently                                                        | current number of free CPUs |
+| -c, --alg_conn             |the minimum algebraic connectivity for ProteinOrtho                                                   | 0.25 |
 | --mb_nruns                 |the number of runs to be used in the MrBayes mcmc                                                     | 4 |
 | --mb_nchains               |the number of chains each run should use in the MrBayes mcmc                                          | 3 |
 | --mb_ntemp                 |adjusts the swap rate between chains, lower temperature is less likely to swap                        | 0.45 |
@@ -44,20 +44,22 @@ For further fine tuning of the script, the following options can also be specifi
 | --mb_samplefreq            |the frequency at which the MrBayes mcmc chain should be samples                                       | 40 |
 | --bucky_alpha              |specifies potentially multiple values of alpha to run BUCKy with                                      | 1 |
 | --bucky_ngen               |the number of generations to run the BUCKy mcmc                                                       | 1000000 |
-| -h OR --help               |display help and exit                                                                                 | N/A |
+| -h, --help                 |display help and exit                                                                                 | N/A |
 
-## Output Files Located in Output Directory
+## Output Files
+The following files can be found in the output directory upon successful completion of the script:
+
 * For each alpha specified via the "--bucky-alpha" command line setting, the following files will be output (where N = a particular value of alpha):
-	* BUCKy-alpha_N.concordance: the most important file output by the script, contains the concordance factors for the quartets relevant to the analysis
-	* BUCKy-alpha_N.cluster: provides information on clustering of input families
-	* BUCKy-alpha_N.gene: summary of input family topologies and probabilies
-	* BUCKy-alpha_N.input: lists file names input to BUCKy
-	* BUCKy-alpha_N.out: log of STDOUT from BUCKy invocation
-* alignments.tar.gz: gzipped tarball containing the alignments used in the analysis as well as the MrBayes commands that were used to analyze them
-* mb-mcmc-avgs.txt: summary of MrBayes mcmc chains across all families used in the analysis, this file can be used primarily to:
+	* **BUCKy-alpha_N.concordance**: the most important file output by the script, contains the concordance factors for the quartets relevant to the analysis
+	* **BUCKy-alpha_N.cluster**: provides information on clustering of input families
+	* **BUCKy-alpha_N.gene**: summary of input family topologies and probabilies
+	* **BUCKy-alpha_N.input**: lists file names input to BUCKy
+	* **BUCKy-alpha_N.out**: log of STDOUT from BUCKy invocation
+* **alignments.tar.gz**: gzipped tarball containing the alignments used in the analysis as well as the MrBayes commands that were used to analyze them
+* **mb-mcmc-avgs.txt**: summary of MrBayes mcmc chains across all families used in the analysis, this file can be used primarily to:
 	1. Determine if the mcmc chains appeared to have converged by checking the average value of the standard deviation of split frequencies
 	2. Determine if the temperature of the mcmc chains should be adjusted by checking the average swap frequencies between chains
-* toca.family-members: contains the names of the contigs present in each family, not all families listed in this file may be included in the concordance analysis
-* toca.proteinortho: output by ProteinOrtho, contains final sequence clustering information of input files. This the file parsed by the toca.pl to determine clustering
-* toca.blast-graph: output by ProteinOrtho, contains similarity scores between contigs as determined by blast
-* toca.proteinortho-graph: output by ProteinOrtho, output by ProteinOrtho, contains similarity scores between contigs as determined by blast
+* **toca.family-members**: contains the names of the contigs present in each family, not all families listed in this file may be included in the concordance analysis
+* **toca.proteinortho**: output by ProteinOrtho, contains final sequence clustering information of input files. This the file parsed by the toca.pl to determine clustering
+* **toca.blast-graph**: output by ProteinOrtho, contains similarity scores between contigs as determined by blast
+* **toca.proteinortho-graph**: output by ProteinOrtho, contains similarity scores between contigs as determined by blast

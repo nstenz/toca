@@ -61,16 +61,16 @@ GetOptions(
 	# General Settings
 	"input|i=s{4,}"         => \@transcriptomes,
 	"polyploids|p=s{0,}"    => \@polyploids,
-	"output_directory|o=s"  => \$project_name,
-	"min_seq_length|l=i"    => \$min_contig_length,
-	"num_threads|T=i"       => \$max_forks,
+	"out_dir|o=s"           => \$project_name,
+	"min_length|l=i"        => \$min_contig_length,
+	"n_threads|T=i"         => \$max_forks,
 	# ProteinOrtho
-	"p_ortho_alg_conn|c=f"  => \$alg_conn_threshold,
+	"alg_conn|c=f"          => \$alg_conn_threshold,
 	# MrBayes
 	"mb_nruns=i"            => \$nruns,
 	"mb_nchains=i"          => \$nchains,
-	"mb_temp=f"           => \$temp,
-	"mb_burnin=f"         => \$burnin,
+	"mb_temp=f"             => \$temp,
+	"mb_burnin=f"           => \$burnin,
 	"mb_ngen=i"             => \$ngen,
 	"mb_samplefreq=i"       => \$samplefreq,
 	# BUCKy
@@ -1151,10 +1151,10 @@ Identify orthologous protein families shared between the given transcriptomes
   -i, --input                 file names of at least four transcriptomes (in FASTA format) to use for analyses (REQUIRED)
   -p, --polyploids            file names of transcriptomes which should be treated as polyploids, treating a transcriptome 
                               as a polyploid allows protein families with multiple copies in the polyploid to run (default: none)
-  -o, --output_directory      name of the directory to store output files in (default: "toca-" + Unix time of script invocation)
-  -l, --min_seq_length        the minimum sequence length (nucleotides) of each family member in order to be analyzed (default: 300)
-  -T, --num_threads           the number of families to analyze concurrently (default: current number of free CPUs)
-  -c, --p_ortho_alg_conn      the minimum algebraic connectivity for ProteinOrtho (default: 0.25)
+  -o, --out_dir               name of the directory to store output files in (default: "toca-" + Unix time of script invocation)
+  -l, --min_length            the minimum sequence length (nucleotides) of each family member in order to be analyzed (default: 300)
+  -T, --n_threads             the number of families to analyze concurrently (default: current number of free CPUs)
+  -c, --alg_conn              the minimum algebraic connectivity for ProteinOrtho (default: 0.25)
   --mb_nruns                  the number of runs to be used in the MrBayes mcmc (default: 4)
   --mb_nchains                the number of chains each run should use in the MrBayes mcmc (default: 3)
   --mb_ntemp                  adjusts the swap rate between chains, lower temperature is less likely to swap (default: 0.45)
