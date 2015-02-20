@@ -63,8 +63,9 @@ GetOptions(
 	"polyploids|p=s{0,}"    => \@polyploids,
 	"output_directory|o=s"  => \$project_name,
 	"min_contig_length|l=i" => \$min_contig_length,
+	"num_threads|T=i"       => \$max_forks,
 	# ProteinOrtho
-	"alg_conn|c=f"          => \$alg_conn_threshold,
+	"p_ortho_alg_conn|c=f"  => \$alg_conn_threshold,
 	# MrBayes
 	"mb_nruns=i"            => \$nruns,
 	"mb_nchains=i"          => \$nchains,
@@ -73,10 +74,11 @@ GetOptions(
 	"mb_ngen=i"             => \$ngen,
 	"mb_samplefreq=i"       => \$samplefreq,
 	# BUCKy
-	"alpha|a=s{0,}"         => \@alphas,
+	"bucky_alpha|a=s{0,}"   => \@alphas,
 	"bucky_ngen=i"          => \$ngen_bucky,
 
 	"help|h"                => \&help,
+	"usage|u"               => \&usage,
 );
 foreach my $polyploid (@polyploids) {
 	$polyploids{$polyploid}++;
