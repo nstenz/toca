@@ -28,23 +28,23 @@ toca.pl -i transcriptome1.fa transcriptome2.fa transcriptome3.fa transcriptome4.
 ### Command Line Options
 For further fine-tuning of the script, the following options can also be specified:
 
-| Option Flag(s)             | Option Descripton                                                                                    | Default |
-|:---------------------------|:----------------------------------------------------------------------------------------------------:|:-------:|
-| -i, --input                |file names of at least four transcriptomes (in FASTA format) to use for analyses                      | none    |
+| Option Flag(s)             | Option Descripton                                                                                     | Default |
+|:---------------------------|:-----------------------------------------------------------------------------------------------------:|:-------:|
+| -i, --input                |file names of at least four transcriptomes (in FASTA format) to use for analyses                       | none    |
 | -p, --polyploids           |file names of transcriptomes which should be treated as polyploids, this allows protein families with multiple copies from the polyploid to run| none |
-| -o, --out_dir              |name of the directory to store output files in                                                        | "toca-" + Unix time of script invocation) |
-| -l, --min_length           |the minimum sequence length (nucleotides) of each family member in order to be analyzed               | 300 nucleotides |
-| -T, --n_threads            |the number of families to analyze concurrently                                                        | current number of free CPUs |
-| -c, --alg_conn             |the minimum algebraic connectivity for ProteinOrtho                                                   | 0.25 |
-| --mb_nruns                 |the number of runs to be used in the MrBayes mcmc                                                     | 4 |
-| --mb_nchains               |the number of chains each run should use in the MrBayes mcmc                                          | 3 |
-| --mb_ntemp                 |adjusts the swap rate between chains, lower temperature is less likely to swap                        | 0.45 |
-| --mb_burnin                |the proportion of mcmc generations which should be discarded as burnin                                | 0.10 |
-| --mb_ngen                  |the number of generations to run the MrBayes mcmc                                                     | 1000000 |
-| --mb_samplefreq            |the frequency at which the MrBayes mcmc chain should be samples                                       | 40 |
-| --bucky_alpha              |specifies potentially multiple values of alpha to run BUCKy with                                      | 1 |
-| --bucky_ngen               |the number of generations to run the BUCKy mcmc                                                       | 1000000 |
-| -h, --help                 |display help and exit                                                                                 | N/A |
+| -o, --out_dir              |name of the directory to store output files in                                                         | "toca-" + Unix time of script invocation) |
+| -l, --min_length           |the minimum sequence length (nucleotides) of each family member in order to be analyzed                | 300 nucleotides |
+| -T, --n_threads            |the number of families to analyze concurrently                                                         | current number of free CPUs |
+| -c, --alg_conn             |the minimum algebraic connectivity for ProteinOrtho                                                    | 0.25 |
+| --mb_nruns                 |the number of runs to be used in the MrBayes mcmc                                                      | 4 |
+| --mb_nchains               |the number of chains each run should use in the MrBayes mcmc                                           | 3 |
+| --mb_ntemp                 |adjusts the swap rate between chains, lower temperature is less likely to swap                         | 0.45 |
+| --mb_burnin                |the proportion of mcmc generations which should be discarded as burnin                                 | 0.10 |
+| --mb_ngen                  |the number of generations to run the MrBayes mcmc                                                      | 1000000 |
+| --mb_samplefreq            |the frequency at which the MrBayes mcmc chain should be samples                                        | 40 |
+| --bucky_alpha              |specifies potentially multiple values of alpha to run BUCKy with, use ("infinity" for alpha = infinity)| 1 |
+| --bucky_ngen               |the number of generations to run the BUCKy mcmc                                                        | 1000000 |
+| -h, --help                 |display help and exit                                                                                  | N/A |
 
 ## Output Files
 The following files can be found in the output directory upon successful completion of the script:
