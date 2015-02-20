@@ -72,7 +72,7 @@ GetOptions(
 	"mb_temp=f"          => \$temp,
 	"mb_burnin=f"        => \$burnin,
 	"mb_ngen=i"          => \$ngen,
-	"mb_sfreq=i"         => \$samplefreq,
+	"mb_samplefreq=i"    => \$samplefreq,
 	# BUCKy
 	"bucky_alpha=s{0,}"  => \@alphas,
 	"bucky_ngen=i"       => \$ngen_bucky,
@@ -1160,7 +1160,7 @@ Identify orthologous protein families shared between the given transcriptomes
   --mb_ntemp                  adjusts the swap rate between chains, lower temperature is less likely to swap (default: 0.45)
   --mb_burnin                 the proportion of mcmc generations which should be discarded as burnin (default: 0.10)
   --mb_ngen                   the number of generations to run the MrBayes mcmc (default: 1000000)
-  --mb_sfreq                  the frequency at which the MrBayes mcmc chain should be samples (default: 40)
+  --mb_samplefreq             the frequency at which the MrBayes mcmc chain should be samples (default: 40)
   --bucky_alpha               specifies potentially multiple values of alpha to run BUCKy with (default: 1)
   --bucky_ngen                the number of generations to run the BUCKy mcmc (default: 1000000)
   -h, --help                  display this help and exit
