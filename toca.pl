@@ -62,23 +62,22 @@ GetOptions(
 	"input|i=s{4,}"         => \@transcriptomes,
 	"polyploids|p=s{0,}"    => \@polyploids,
 	"output_directory|o=s"  => \$project_name,
-	"min_contig_length|l=i" => \$min_contig_length,
+	"min_seq_length|l=i"    => \$min_contig_length,
 	"num_threads|T=i"       => \$max_forks,
 	# ProteinOrtho
 	"p_ortho_alg_conn|c=f"  => \$alg_conn_threshold,
 	# MrBayes
 	"mb_nruns=i"            => \$nruns,
 	"mb_nchains=i"          => \$nchains,
-	"mb_temp|t=f"           => \$temp,
-	"mb_burnin|b=f"         => \$burnin,
+	"mb_temp=f"           => \$temp,
+	"mb_burnin=f"         => \$burnin,
 	"mb_ngen=i"             => \$ngen,
 	"mb_samplefreq=i"       => \$samplefreq,
 	# BUCKy
-	"bucky_alpha|a=s{0,}"   => \@alphas,
+	"bucky_alpha=s{0,}"   => \@alphas,
 	"bucky_ngen=i"          => \$ngen_bucky,
 
 	"help|h"                => \&help,
-	"usage|u"               => \&usage,
 );
 foreach my $polyploid (@polyploids) {
 	$polyploids{$polyploid}++;
@@ -1144,12 +1143,36 @@ sub logger {
 	}
 }
 
-#TODO: unstub
 sub help {
-	return "";
+print <<EOF; 
+@{[usage()]}
+Identify orthologous protein families shared between the given transcriptomes
+
+  -i, --input                 file names of at least four transcriptomes (in FASTA format) to use for analyses (REQUIRED)
+  -p, --polyploids            file names of transcriptomes which should be treated as polyploids, treating a transcriptome 
+                              as a polyploid allows protein families with multiple copies in the polyploid to run (default: none)
+  -o, --output_directory      name of the directory to store output files in (default: "toca-" + Unix time of script invocation)
+  -l, --min_seq_length        the minimum sequence length (nucleotides) of each family member in order to be analyzed (default: 300)
+  -T, --num_threads           the number of families to analyze concurrently (default: current number of free CPUs)
+  -c, --p_ortho_alg_conn      the minimum algebraic connectivity for ProteinOrtho (default: 0.25)
+  --mb_nruns                  the number of runs to be used in the MrBayes mcmc (default: 4)
+  --mb_nchains                the number of chains each run should use in the MrBayes mcmc (default: 3)
+  --mb_ntemp                  adjusts the swap rate between chains, lower temperature is less likely to swap (default: 0.45)
+  --mb_burnin                 the proportion of mcmc generations which should be discarded as burnin (default: 0.10)
+  --mb_ngen                   the number of generations to run the MrBayes mcmc (default: 1000000)
+  --mb_samplefreq             the frequency at which the MrBayes mcmc chain should be samples (default: 40)
+  --bucky_alpha               specifies potentially multiple values of alpha to run BUCKy with (default: 1)
+  --bucky_ngen                the number of generations to run the BUCKy mcmc (default: 1000000)
+  -h, --help                  display this help and exit
+
+Examples:
+  perl $0 -i t1.fa t2.fa t3.fa t4.fa     runs the script with default settings using the t1.fa, t2.fa, t3.fa, and t4.fa as input
+
+Mail bug reports and suggestions to <noah.stenz.github\@gmail.com>
+EOF
+exit(0);
 }
 
-#TODO: unstub
 sub usage {
-	return "";
+	return "Usage: perl toca.pl -i FILES [OPTIONS]...\n";
 }
