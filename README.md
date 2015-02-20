@@ -41,7 +41,7 @@ For further fine-tuning of the script, the following options can also be specifi
 | --mb_ntemp                 |adjusts the swap rate between chains, lower temperature is less likely to swap                        | 0.45 |
 | --mb_burnin                |the proportion of mcmc generations which should be discarded as burnin                                | 0.10 |
 | --mb_ngen                  |the number of generations to run the MrBayes mcmc                                                     | 1000000 |
-| --mb_samplefreq            |the frequency at which the MrBayes mcmc chain should be samples                                       | 40 |
+| --mb_sfreq                 |the frequency at which the MrBayes mcmc chain should be samples                                       | 40 |
 | --bucky_alpha              |specifies potentially multiple values of alpha to run BUCKy with                                      | 1 |
 | --bucky_ngen               |the number of generations to run the BUCKy mcmc                                                       | 1000000 |
 | -h, --help                 |display help and exit                                                                                 | N/A |
