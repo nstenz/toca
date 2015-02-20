@@ -17,7 +17,7 @@ This script detects orthologous single-copy protein families present in the inpu
 ## Script Workflow
 Potential orthologous families are first identified using ProteinOrtho. In order to obtain higher quality alignments, the sequences of the members of the detected families are reduced to only shared homologous sites. These reduced sequences are then aligned with MUSCLE. Once the families are aligned, they are then run through MrBayes in order to determine their posterior distributions. The results of mcmc chain are then summarized with mbsum. All resulting MrBayes summaries are then pooled together and run in BUCKy to quantify discordance between the input files.
 
-## Script Usage Settings
+## Script Usage & Settings
 ### Usage
 At the mininmum, the script requires four FASTA files specfied with -i or --input to run:
 
