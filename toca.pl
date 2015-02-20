@@ -1036,16 +1036,36 @@ sub rev_comp {
 
 sub get_free_cpus {
 
+	my $os_name = $^O;
+
 	# Returns a two-member array containing CPU usage observed by top,
 	# top is run twice as its first output is usually inaccurate
-	chomp(my @percent_free_cpu = `top -bn2d0.05 | grep "Cpu(s)"`);
+	my @percent_free_cpu;
+	if ($os_name eq "darwin") {
+		# mac OS
+		chomp(@percent_free_cpu = `top -l 2 | grep "Cpu(s)"`);
+	}
+	else {
+		# linux
+		chomp(@percent_free_cpu = `top -bn2d0.05 | grep "Cpu(s)"`);
+	}
 
 	my $percent_free_cpu = pop(@percent_free_cpu);
 	my $test = $percent_free_cpu;
 	$percent_free_cpu =~ s/.*?(\d+\.\d)\s*%?ni,\s*(\d+\.\d)\s*%?id.*/$1 + $2/; # also includes %nice as free 
 	$percent_free_cpu = eval($percent_free_cpu);
 
-	my $total_cpus = `grep 'cpu' /proc/stat | wc -l` - 1;
+	my $total_cpus;
+	if ($os_name eq "darwin") {
+		# mac OS
+		$total_cpus = `sysctl -n hw.ncpu`;
+	}
+	else {
+		# linux
+		$total_cpus = `grep 'cpu' /proc/stat | wc -l` - 1;
+	}
+
+	#my $total_cpus = `grep 'cpu' /proc/stat | wc -l` - 1;
 	die "$test\n" if (!defined($percent_free_cpu));
 
 	my $free_cpus = ceil($total_cpus * $percent_free_cpu / 100);
