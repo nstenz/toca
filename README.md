@@ -4,7 +4,7 @@ This script detects orthologous single-copy protein families present in the inpu
 ## Dependencies
 1. [ProteinOrtho.pl](https://www.bioinf.uni-leipzig.de/Software/proteinortho/)
 	* Used to identify orthologous sequences shared across the given transcriptomes
-2. [Blast](ftp://ftp.ncbi.nlm.nih.gov/blast/executables/blast+/LATEST/)
+2. [Blast](http://1.usa.gov/1zTP2u6)
 	* Used by ProteinOrtho.pl to detect orthologs. Also used to reduce orthologous sequences to only their shared homologous sites
 3. [MUSCLE](http://www.drive5.com/muscle/downloads.htm)
 	* Used to align orthologous family sequences after reduction to homologous sites
@@ -28,23 +28,36 @@ toca.pl -i transcriptome1.fa transcriptome2.fa transcriptome3.fa transcriptome4.
 ### Command Line Options
 For further fine tuning of the script, the following options can also be specified:
 
-| Option Flag(s)         | Option Descripton                                                                                    | Default |
-|:-----------------------|:----------------------------------------------------------------------------------------------------:|:-------:|
-| -i, --input            |file names of at least four transcriptomes (in FASTA format) to use for analyses                      | none |
-| -p, --polyploids       |file names of transcriptomes which should be treated as polyploids, treating a transcriptome as a polyploid allows protein families with multiple copies in the polyploid to run| none |
-| -o, --output_directory |name of the directory to store output files in                                                        | "toca-" + Unix time of script invocation) |
-| -l, --min_seq_length   |the minimum sequence length (nucleotides) of each family member in order to be analyzed               | 300 nucleotides |
-| -T, --num_threads      |the number of families to analyze concurrently                                                        | current number of free CPUs |
-| -c, --p_ortho_alg_conn |the minimum algebraic connectivity for ProteinOrtho                                                   | 0.25 |
-| --mb_nruns             |the number of runs to be used in the MrBayes mcmc                                                     | 4 |
-| --mb_nchains           |the number of chains each run should use in the MrBayes mcmc                                          | 3 |
-| --mb_ntemp             |adjusts the swap rate between chains, lower temperature is less likely to swap                        | 0.45 |
-| --mb_burnin            |the proportion of mcmc generations which should be discarded as burnin                                | 0.10 |
-| --mb_ngen              |the number of generations to run the MrBayes mcmc                                                     | 1000000 |
-| --mb_samplefreq        |the frequency at which the MrBayes mcmc chain should be samples                                       | 40 |
-| --bucky_alpha          |specifies potentially multiple values of alpha to run BUCKy with                                      | 1 |
-| --bucky_ngen           |the number of generations to run the BUCKy mcmc                                                       | 1000000 |
-| -h, --help             |display help and exit                                                                                 | N/A |
+| Option Flag(s)             | Option Descripton                                                                                    | Default |
+|:---------------------------|:----------------------------------------------------------------------------------------------------:|:-------:|
+| -i OR --input              |file names of at least four transcriptomes (in FASTA format) to use for analyses                      | none    |
+| -p OR --polyploids         |file names of transcriptomes which should be treated as polyploids, this allows protein families with multiple copies from the polyploid to run| none |
+| -o OR --output_directory   |name of the directory to store output files in                                                        | "toca-" + Unix time of script invocation) |
+| -l OR --min_seq_length     |the minimum sequence length (nucleotides) of each family member in order to be analyzed               | 300 nucleotides |
+| -T OR --num_threads        |the number of families to analyze concurrently                                                        | current number of free CPUs |
+| -c OR --p_ortho_alg_conn   |the minimum algebraic connectivity for ProteinOrtho                                                   | 0.25 |
+| --mb_nruns                 |the number of runs to be used in the MrBayes mcmc                                                     | 4 |
+| --mb_nchains               |the number of chains each run should use in the MrBayes mcmc                                          | 3 |
+| --mb_ntemp                 |adjusts the swap rate between chains, lower temperature is less likely to swap                        | 0.45 |
+| --mb_burnin                |the proportion of mcmc generations which should be discarded as burnin                                | 0.10 |
+| --mb_ngen                  |the number of generations to run the MrBayes mcmc                                                     | 1000000 |
+| --mb_samplefreq            |the frequency at which the MrBayes mcmc chain should be samples                                       | 40 |
+| --bucky_alpha              |specifies potentially multiple values of alpha to run BUCKy with                                      | 1 |
+| --bucky_ngen               |the number of generations to run the BUCKy mcmc                                                       | 1000000 |
+| -h OR --help               |display help and exit                                                                                 | N/A |
 
-## Output Files
-
+## Output Files Located in Output Directory
+* For each alpha specified via the "--bucky-alpha" command line setting, the following files will be output (where N = a particular value of alpha):
+	* BUCKy-alpha_N.concordance: the most important file output by the script, contains the concordance factors for the quartets relevant to the analysis
+	* BUCKy-alpha_N.cluster: provides information on clustering of input families
+	* BUCKy-alpha_N.gene: summary of input family topologies and probabilies
+	* BUCKy-alpha_N.input: lists file names input to BUCKy
+	* BUCKy-alpha_N.out: log of STDOUT from BUCKy invocation
+* alignments.tar.gz: gzipped tarball containing the alignments used in the analysis as well as the MrBayes commands that were used to analyze them
+* mb-mcmc-avgs.txt: summary of MrBayes mcmc chains across all families used in the analysis, this file can be used primarily to:
+	1. Determine if the mcmc chains appeared to have converged by checking the average value of the standard deviation of split frequencies
+	2. Determine if the temperature of the mcmc chains should be adjusted by checking the average swap frequencies between chains
+* toca.family-members: contains the names of the contigs present in each family, not all families listed in this file may be included in the concordance analysis
+* toca.proteinortho: output by ProteinOrtho, contains final sequence clustering information of input files. This the file parsed by the toca.pl to determine clustering
+* toca.blast-graph: output by ProteinOrtho, contains similarity scores between contigs as determined by blast
+* toca.proteinortho-graph: output by ProteinOrtho, output by ProteinOrtho, contains similarity scores between contigs as determined by blast
