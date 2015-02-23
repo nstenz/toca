@@ -1044,7 +1044,7 @@ sub get_free_cpus {
 	my @percent_free_cpu;
 	if ($os_name eq "darwin") {
 		# mac OS
-		chomp(@percent_free_cpu = `top -l 2 | grep "Cpu(s)"`);
+		chomp(@percent_free_cpu = `top -i 1 -l 2 | grep "CPU usage"`);
 	}
 	else {
 		# linux
@@ -1052,9 +1052,16 @@ sub get_free_cpus {
 	}
 
 	my $percent_free_cpu = pop(@percent_free_cpu);
-	my $test = $percent_free_cpu;
-	$percent_free_cpu =~ s/.*?(\d+\.\d)\s*%?ni,\s*(\d+\.\d)\s*%?id.*/$1 + $2/; # also includes %nice as free 
-	$percent_free_cpu = eval($percent_free_cpu);
+
+	if ($os_name eq "darwin") {
+		#mac
+		$percent_free_cpu =~ s/.*?(\d+\.\d+)%\s+id.*/$1/;
+	}
+	else {
+		#linux 
+		$percent_free_cpu =~ s/.*?(\d+\.\d)\s*%?ni,\s*(\d+\.\d)\s*%?id.*/$1 + $2/; # also includes %nice as free 
+		$percent_free_cpu = eval($percent_free_cpu);
+	}
 
 	my $total_cpus;
 	if ($os_name eq "darwin") {
@@ -1063,15 +1070,12 @@ sub get_free_cpus {
 	}
 	else {
 		# linux
-		$total_cpus = `grep 'cpu' /proc/stat | wc -l` - 1;
+		$total_cpus = `grep --count 'cpu' /proc/stat` - 1;
 	}
-
-	#my $total_cpus = `grep 'cpu' /proc/stat | wc -l` - 1;
-	die "$test\n" if (!defined($percent_free_cpu));
 
 	my $free_cpus = ceil($total_cpus * $percent_free_cpu / 100);
 
-	if ($free_cpus == 0) {
+	if ($free_cpus == 0 || $free_cpus !~ /^\d+$/) {
 		$free_cpus = 1; # assume that at least one cpu can be used
 	}
 	
