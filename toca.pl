@@ -54,6 +54,9 @@ my $blastn = check_path_for_exec("blastn"); # required by ProteinOrtho
 my $makeblastdb = check_path_for_exec("makeblastdb"); # required by ProteinOrtho
 my $protein_ortho = check_path_for_exec("proteinortho5.pl");
 
+# Store script settings
+my $settings = "@ARGV";
+
 my %polyploids;
 my @polyploids;
 my @transcriptomes;
@@ -117,7 +120,10 @@ my $mb_stddev_sum = "mb-avg-split-std-dev.txt";
 my $mb_sum_dir = "mb-sums";
 my $align_dir = "alignments";
 
-logger('', "\nRunning ProteinOrtho to identify orthologous proteins...\n");
+# Echo script invocation
+logger('', "\nInvocation: perl toca.pl $settings");
+
+logger('', "Running ProteinOrtho to identify orthologous proteins...\n");
 system("$protein_ortho @transcriptomes -p=blastn+ -clean -conn=$alg_conn_threshold -project=toca") && die;
 
 mkdir($align_dir) if (!-e $align_dir) || die "Could not create directory '$align_dir': $!.\n";
@@ -187,14 +193,14 @@ logger('', "$count families passed selection criteria.\n");
 # Don't let forks become zombies
 $SIG{CHLD} = 'IGNORE';
 
-# Modify SIG_INT (ctrl+c) handler so we can clean up
+# Modify SIGINT (Ctrl+C) handler so we can clean up
 $SIG{INT} = 'INT_handler';
 
 ########################################
 # Analyze up to $max_forks concurrently:
 ########################################
 
-logger('', "Beginning analyses for each family...");
+logger('', "Analyzing each family using a maximum of $max_forks CPU(s)...");
 
 # Run each family
 foreach my $family (sort { $a <=> $b } keys %families) {
@@ -586,6 +592,7 @@ sub INT_handler {
 	chdir("..");
 
 	# Try to delete directory five times, if it can't be deleted print an error message
+	# I've found this method is necessary for analyses performed on AFS drives
 	my $count = 0;
 	until (!-e $project_name || $count == 5) {
 		$count++;
@@ -1043,29 +1050,29 @@ sub get_free_cpus {
 	# top is run twice as its first output is usually inaccurate
 	my @percent_free_cpu;
 	if ($os_name eq "darwin") {
-		# mac OS
+		# Mac OS
 		chomp(@percent_free_cpu = `top -i 1 -l 2 | grep "CPU usage"`);
 	}
 	else {
-		# linux
+		# Linux
 		chomp(@percent_free_cpu = `top -bn2d0.05 | grep "Cpu(s)"`);
 	}
 
 	my $percent_free_cpu = pop(@percent_free_cpu);
 
 	if ($os_name eq "darwin") {
-		#mac
+		# Mac OS
 		$percent_free_cpu =~ s/.*?(\d+\.\d+)%\s+id.*/$1/;
 	}
 	else {
-		#linux 
+		# linux 
 		$percent_free_cpu =~ s/.*?(\d+\.\d)\s*%?ni,\s*(\d+\.\d)\s*%?id.*/$1 + $2/; # also includes %nice as free 
 		$percent_free_cpu = eval($percent_free_cpu);
 	}
 
 	my $total_cpus;
 	if ($os_name eq "darwin") {
-		# mac OS
+		# Mac OS
 		$total_cpus = `sysctl -n hw.ncpu`;
 	}
 	else {
@@ -1170,7 +1177,7 @@ Identify orthologous protein families shared between the given transcriptomes
   -h, --help                  display this help and exit
 
 Examples:
-  perl $0 -i t1.fa t2.fa t3.fa t4.fa     runs the script with default settings using the t1.fa, t2.fa, t3.fa, and t4.fa as input
+  perl toca.pl -i t1.fa t2.fa t3.fa t4.fa     runs the script with default settings using the t1.fa, t2.fa, t3.fa, and t4.fa as input
 
 Mail bug reports and suggestions to <noah.stenz.github\@gmail.com>
 EOF
