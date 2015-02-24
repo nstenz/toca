@@ -63,3 +63,4 @@ The following files can be found in the output directory upon successful complet
 * **toca.proteinortho**: output by ProteinOrtho, contains final sequence clustering information of input files. This the file parsed by the toca.pl to determine clustering
 * **toca.blast-graph**: output by ProteinOrtho, contains similarity scores between contigs as determined by blast
 * **toca.proteinortho-graph**: output by ProteinOrtho, contains similarity scores between contigs as determined by blast
+* symlinks to the input FASTA files
