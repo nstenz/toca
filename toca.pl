@@ -1,9 +1,9 @@
 #!/usr/bin/perl
 use strict;
 use warnings;
-use POSIX;
 use Getopt::Long;
 use Cwd qw(abs_path);
+use POSIX qw(:sys_wait_h);
 use Time::HiRes qw(usleep);
 use Fcntl qw(:flock SEEK_END);
 use File::Path qw(remove_tree);
@@ -15,7 +15,8 @@ use File::Path qw(remove_tree);
 # Set maximum number of forks to number of free CPUs:
 #   I use forks instead of threads because the computer I run analyses on doesn't have 
 #   perl compiled with threads and I've read that perl's threading has poor performance
-my $max_forks = get_free_cpus();
+#my $max_forks = get_free_cpus();
+my $max_forks = 4;
 
 # Fork PIDs 
 my @pids;  
@@ -842,21 +843,32 @@ sub write_nexus {
 sub okay_to_run {
 
 	# Free up a CPU by sleeping for 10 ms
-	usleep(10000);
+	#usleep(10000);
+	sleep(1);
 
-	my $running_forks = 0;
+	#my $running_forks = 0;
+	my $current_forks = scalar(@pids);
 	foreach my $index (reverse(0 .. $#pids)) {
+	#	my $pid = $pids[$index];
+	#	#if (kill 0, $pid) {
+	#	if (kill 0, $pid) {
+	#		$running_forks++;
+	#	}
+	#	else {
+	#		splice(@pids, $index, 1);
+	#	}
 		my $pid = $pids[$index];
-		if (kill 0, $pid) {
-			$running_forks++;
-		}
-		else {
-			waitpid($pid, 0);
+		my $wait = waitpid($pid, WNOHANG);
+
+		# Successfully reaped child
+		if ($wait > 0) {
+			$current_forks--;
 			splice(@pids, $index, 1);
 		}
 	}
 
-	return ($running_forks < $max_forks);
+	#return ($running_forks < $max_forks);
+	return ($current_forks < $max_forks);
 }
 
 sub check_path_for_exec {
