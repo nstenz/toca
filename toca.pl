@@ -19,6 +19,7 @@ my $max_forks = get_free_cpus();
 
 # Fork PIDs 
 my @pids;  
+my $parent_pid = $$;
 
 # Files which should be deleted upon completion or termination of an analysis
 my @unlink;
@@ -102,7 +103,7 @@ foreach my $index (0 .. $#transcriptomes) {
 	my $transcriptome_abs_path = abs_path($transcriptome);
 	(my $transcriptome_root = $transcriptome) =~ s/.*\///;
 
-	system("ln -s $transcriptome_abs_path $ENV{PWD}/$project_name/$transcriptome_root");
+	run_cmd("ln -s $transcriptome_abs_path $ENV{PWD}/$project_name/$transcriptome_root");
 	$transcriptomes[$index] = $transcriptome_root;
 }
 
@@ -124,7 +125,7 @@ my $align_dir = "alignments";
 logger('', "\nInvocation: perl toca.pl $settings");
 
 logger('', "Running ProteinOrtho to identify orthologous proteins...\n");
-system("$protein_ortho @transcriptomes -p=blastn+ -clean -conn=$alg_conn_threshold -project=toca") && die;
+run_cmd("$protein_ortho @transcriptomes -p=blastn+ -clean -conn=$alg_conn_threshold -project=toca");
 
 mkdir($align_dir) if (!-e $align_dir) || die "Could not create directory '$align_dir': $!.\n";
 mkdir($mb_sum_dir) if (!-e $mb_sum_dir) || die "Could not create directory '$mb_sum_dir': $!.\n";
@@ -189,9 +190,6 @@ if ($count == 0) {
 	exit(0);
 }
 logger('', "$count families passed selection criteria.\n");
-
-# Don't let forks become zombies
-$SIG{CHLD} = 'IGNORE';
 
 # Modify SIGINT (Ctrl+C) handler so we can clean up
 $SIG{INT} = 'INT_handler';
@@ -269,10 +267,10 @@ logger('', "MrBayes MCMC quality summaries complete.");
 foreach my $alpha (@alphas) {
 	logger('', "Running BUCKy with $ngen_bucky MCMC generations and alpha = $alpha...\n");
 	if ($alpha !~ /^inf/i) {
-		system("$bucky -a $alpha -n $ngen_bucky -o BUCKy-alpha_$alpha $mb_sum_dir/*.sum");
+		run_cmd("$bucky -a $alpha -n $ngen_bucky -o BUCKy-alpha_$alpha $mb_sum_dir/*.sum");
 	}
 	else {
-		system("$bucky --use-independence-prior -n $ngen_bucky -o BUCKy-alpha_$alpha $mb_sum_dir/*.sum");
+		run_cmd("$bucky --use-independence-prior -n $ngen_bucky -o BUCKy-alpha_$alpha $mb_sum_dir/*.sum");
 	}
 }
 logger('', "Cleaning up and organizing remaining files...");
@@ -281,7 +279,7 @@ logger('', "Cleaning up and organizing remaining files...");
 remove_tree($mb_sum_dir);
 
 # Tarball and gzip alignments
-system("tar czf alignments.tar.gz $align_dir/");
+run_cmd("tar czf alignments.tar.gz $align_dir/");
 remove_tree($align_dir);
 
 logger('', "Script execution complete.\n");
@@ -518,7 +516,7 @@ sub analyze_family {
 
 	# Align with MUSCLE
 	logger($id, "Aligning reduced sites with MUSCLE.");
-	system("$muscle -in $family_reduced -out $family_aligned >/dev/null 2>&1") || die;
+	run_cmd("$muscle -in $family_reduced -out $family_aligned >/dev/null 2>&1");
 
 	# Load alignment created by MUSCLE, and rewrite it in NEXUS format with MrBayes commands
 	my %family_aligned = parse_fasta($family_aligned);
@@ -526,7 +524,7 @@ sub analyze_family {
 
 	# Run MrBayes
 	logger($id, "Running MrBayes and summarizing runs.");
-	system("$mb $family_aligned > $mb_log_name") || die;
+	run_cmd("$mb $family_aligned > $mb_log_name");
 
 	# Open MrBayes log, extract swap frequencies + final std dev of split frequencies
 	open(my $mb_log, "<", $mb_log_name);
@@ -573,7 +571,7 @@ sub analyze_family {
 
 	# The number of generations from each run to exclude as burnin
 	my $trim = ($ngen * $burnin * $burnin + $nruns) / $nruns;
-	system("$mbsum $family_aligned.*.t -n $trim -o $mb_sum_dir/$id.sum >/dev/null 2>&1") || die;
+	run_cmd("$mbsum $family_aligned.*.t -n $trim -o $mb_sum_dir/$id.sum >/dev/null 2>&1");
 
 	logger($id, "All analyses successfully completed.");
 
@@ -581,7 +579,7 @@ sub analyze_family {
 }
 
 sub INT_handler {
-	logger('', "\rKeyboard interupt detected, stopping analyses and cleaning up.");
+	logger('', "\rKeyboard interrupt or pipeline error detected, stopping analyses and cleaning up.");
 
 	# Send SIGTERM to forks, they will in turn sent SIGKILL to their pgroup
 	kill 15, @pids; 
@@ -613,8 +611,8 @@ sub reorient_contigs {
 	my %sequences = %{$sequences};
 
 	# Create BLAST database and perform self-BLAST, an evalue of 1e-05 is the default for ProteinOrtho
-	system("$makeblastdb -in $family_raw -input_type fasta -dbtype nucl >/dev/null") || die;
-	system("$blastn -db $family_raw -query $family_raw -out=$family_raw.out -outfmt '6 qseqid sseqid qstart qend sstrand' -evalue 1e-05 >/dev/null") || die;
+	run_cmd("$makeblastdb -in $family_raw -input_type fasta -dbtype nucl >/dev/null");
+	run_cmd("$blastn -db $family_raw -query $family_raw -out=$family_raw.out -outfmt '6 qseqid sseqid qstart qend sstrand' -evalue 1e-05 >/dev/null");
 
 	# Open resulting BLAST output
 	open(my $blast, "<", "$family_raw.out");
@@ -853,6 +851,7 @@ sub okay_to_run {
 			$running_forks++;
 		}
 		else {
+			waitpid($pid, 0);
 			splice(@pids, $index, 1);
 		}
 	}
@@ -1151,6 +1150,18 @@ sub logger {
 	}
 	else {
 		print "$time $msg\n"; 
+	}
+}
+
+sub run_cmd {
+	my $command = shift;
+
+	my $return = system($command);
+
+	if ($return) {
+		logger('', "'$command' died with error: '$return'.\n");
+		kill(2, $parent_pid);
+		exit(0);
 	}
 }
 
