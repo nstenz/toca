@@ -15,8 +15,7 @@ use File::Path qw(remove_tree);
 # Set maximum number of forks to number of free CPUs:
 #   I use forks instead of threads because the computer I run analyses on doesn't have 
 #   perl compiled with threads and I've read that perl's threading has poor performance
-#my $max_forks = get_free_cpus();
-my $max_forks = 4;
+my $max_forks = get_free_cpus();
 
 # Fork PIDs 
 my @pids;  
