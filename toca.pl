@@ -3,9 +3,9 @@ use strict;
 use warnings;
 use Getopt::Long;
 use Cwd qw(abs_path);
-use POSIX qw(:sys_wait_h);
 use Time::HiRes qw(usleep);
 use Fcntl qw(:flock SEEK_END);
+use POSIX qw(ceil :sys_wait_h);
 use File::Path qw(remove_tree);
 
 ##################################################################################
@@ -842,8 +842,7 @@ sub write_nexus {
 sub okay_to_run {
 
 	# Free up a CPU by sleeping for 10 ms
-	#usleep(10000);
-	sleep(1);
+	usleep(10000);
 
 	#my $running_forks = 0;
 	my $current_forks = scalar(@pids);
